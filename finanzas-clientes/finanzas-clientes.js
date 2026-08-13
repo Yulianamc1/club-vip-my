@@ -25,6 +25,14 @@ const THEMES = [
   { id: "terracotta", name: "Terracota", accent: "#b6563f", accent2: "#da8a72", soft: "#faece7", softer: "#fff9f7", ink: "#713528" },
   { id: "neutral", name: "Neutro", accent: "#58536c", accent2: "#88829e", soft: "#efedf4", softer: "#faf9fc", ink: "#363244" },
 ];
+const BACKGROUNDS = [
+  { id: "beige", name: "Beige suave", base: "#f3eee6", warm: "#fbf7f0", header: "#eadfd3", header2: "#f8f1e8", panel: "#f6ede3", panel2: "#fbf6ef", line: "#e0d6cc" },
+  { id: "lavender", name: "Morado pastel", base: "#f1edf5", warm: "#faf7fb", header: "#e7deef", header2: "#f6f1f8", panel: "#eee6f3", panel2: "#faf6fb", line: "#ddd4e5" },
+  { id: "blush", name: "Rosa pastel", base: "#f7eef2", warm: "#fcf7f8", header: "#f0dfe6", header2: "#faf1f4", panel: "#f5e7ec", panel2: "#fcf5f7", line: "#e8d5dd" },
+  { id: "sage", name: "Verde suave", base: "#edf3ef", warm: "#f8faf8", header: "#dce9e1", header2: "#f1f7f3", panel: "#e5efe9", panel2: "#f6faf7", line: "#d3e0d8" },
+  { id: "mist", name: "Azul nube", base: "#edf2f7", warm: "#f7f9fb", header: "#dce7f0", header2: "#f1f5f9", panel: "#e5edf4", panel2: "#f6f9fb", line: "#d3dee8" },
+  { id: "ivory", name: "Marfil", base: "#f7f3eb", warm: "#fdfaf4", header: "#eee6d8", header2: "#faf6ee", panel: "#f5eddf", panel2: "#fcf8f1", line: "#e4dccf" },
+];
 const NAV_ITEMS = [
   ["summary", "Inicio"],
   ["income", "Ingresos"],
@@ -167,7 +175,21 @@ function applyTheme(theme = settings) {
   style.setProperty("--accent-softer", theme?.accentSofter || preset.softer);
   style.setProperty("--accent-ink", theme?.accentInk || preset.ink);
   style.setProperty("--accent-contrast", readableAccentText(customAccent));
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", customAccent);
+  applyBackground(theme);
+}
+
+function applyBackground(theme = settings) {
+  const preset = BACKGROUNDS.find((item) => item.id === theme?.backgroundId) || BACKGROUNDS[0];
+  const style = document.documentElement.style;
+  const base = theme?.backgroundColor || preset.base;
+  style.setProperty("--bg", base);
+  style.setProperty("--warm-bg", theme?.backgroundWarm || preset.warm);
+  style.setProperty("--header-wash", theme?.backgroundHeader || preset.header);
+  style.setProperty("--header-wash-2", theme?.backgroundHeader2 || preset.header2);
+  style.setProperty("--panel-wash", theme?.backgroundPanel || preset.panel);
+  style.setProperty("--panel-wash-2", theme?.backgroundPanel2 || preset.panel2);
+  style.setProperty("--line", theme?.backgroundLine || preset.line);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme?.backgroundHeader || preset.header);
 }
 
 function readableAccentText(hex) {
@@ -271,7 +293,8 @@ function shellHtml() {
           ${context.demo ? '<span class="demo-pill">Vista demostración</span>' : ""}
           <span class="privacy-pill"><span aria-hidden="true">●</span> Solo en este dispositivo</span>
           <button class="button outline" data-action="back-platform"><span class="button-icon" aria-hidden="true">←</span><span>Plataforma</span></button>
-          <button class="button outline" data-action="theme"><span class="button-icon" aria-hidden="true">●</span><span>Color y fondo</span></button>
+          <button class="button outline" data-action="theme"><span class="button-icon" aria-hidden="true">●</span><span>Color</span></button>
+          <button class="button outline" data-action="background"><span class="button-icon" aria-hidden="true">▰</span><span>Fondo</span></button>
           <button class="button primary" data-action="backup"><span class="button-icon" aria-hidden="true">↓</span><span>Respaldo</span></button>
         </div>
       </div>
@@ -540,7 +563,12 @@ function closeModal() {
 
 function openThemeModal() {
   const presets = THEMES.map((theme) => `<button class="theme-option ${settings.themeId === theme.id ? "active" : ""}" data-action="apply-theme" data-theme="${theme.id}"><span class="theme-swatch" style="background:linear-gradient(135deg,${theme.accent},${theme.accent2})"></span><span>${theme.name}</span></button>`).join("");
-  openModal("Color y fondo de mis Finanzas", "El tono elegido se aplicará también al encabezado, navegación y fondos suaves.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customAccent">O elige tu propio color principal</label><input id="customAccent" type="color" value="${escapeHtml(settings.accent || THEMES[0].accent)}" style="height:54px;padding:5px"><small>Los fondos se generan en tonos pastel para cuidar la vista. No cambiará otras secciones de la Plataforma VIP.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-theme">Guardar color y fondo</button>`);
+  openModal("Color de detalles", "Cambia botones, títulos, indicadores y acentos. El fondo permanecerá igual.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customAccent">O elige tu propio color</label><input id="customAccent" type="color" value="${escapeHtml(settings.accent || THEMES[0].accent)}" style="height:54px;padding:5px"><small>Este control no modifica el fondo.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-theme">Guardar color</button>`);
+}
+
+function openBackgroundModal() {
+  const presets = BACKGROUNDS.map((background) => `<button class="theme-option ${(settings.backgroundId === background.id || (!settings.backgroundId && background.id === "beige")) ? "active" : ""}" data-action="apply-background" data-background="${background.id}"><span class="theme-swatch" style="background:linear-gradient(135deg,${background.header},${background.panel2})"></span><span>${background.name}</span></button>`).join("");
+  openModal("Fondo de mis Finanzas", "Cambia las áreas grandes y el encabezado con tonos suaves. Tus botones conservarán su color.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customBackground">O elige un fondo personalizado</label><input id="customBackground" type="color" value="${escapeHtml(settings.backgroundColor || BACKGROUNDS[0].base)}" style="height:54px;padding:5px"><small>El fondo y el color de detalles funcionan por separado.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-background">Guardar fondo</button>`);
 }
 
 function catalogOptions(selectedId = "") {
@@ -819,6 +847,7 @@ async function finishSetup() {
     accentSoft: THEMES[0].soft,
     accentSofter: THEMES[0].softer,
     accentInk: THEMES[0].ink,
+    backgroundId: "beige",
     createdAt: created,
     updatedAt: created,
   };
@@ -836,7 +865,7 @@ async function seedDemo() {
   const d = (day, offset = 0) => `${addMonths(month, offset)}-${String(day).padStart(2, "0")}`;
   const created = nowIso();
   const profile = { id: "regime_demo", effectiveFrom: `${date.getFullYear()}-01-01`, personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, createdAt: created };
-  settings = { id: "current", businessName: "Mi negocio", businessType: "both", currency: "MXN", personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, regimeHistory: [profile], themeId: "purple", accent: THEMES[0].accent, accent2: THEMES[0].accent2, accentSoft: THEMES[0].soft, accentSofter: THEMES[0].softer, accentInk: THEMES[0].ink, createdAt: created, updatedAt: created };
+  settings = { id: "current", businessName: "Mi negocio", businessType: "both", currency: "MXN", personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, regimeHistory: [profile], themeId: "purple", accent: THEMES[0].accent, accent2: THEMES[0].accent2, accentSoft: THEMES[0].soft, accentSofter: THEMES[0].softer, accentInk: THEMES[0].ink, backgroundId: "beige", createdAt: created, updatedAt: created };
   const products = [
     { id: "cat_demo_1", kind: "product", name: "Producto principal", category: "Productos", price: 180, cost: 72, createdAt: created, updatedAt: created },
     { id: "cat_demo_2", kind: "product", name: "Producto especial", category: "Productos", price: 280, cost: 125, createdAt: created, updatedAt: created },
@@ -876,6 +905,7 @@ async function handleClick(event) {
   if (action === "close-modal") closeModal();
   else if (action === "back-platform") location.assign(globalThis.MYVIP_FINANCE_PLATFORM_URL || "../index.html");
   else if (action === "theme") openThemeModal();
+  else if (action === "background") openBackgroundModal();
   else if (action === "backup" || action === "download-backup") openBackupModal();
   else if (action === "restore") chooseRestoreFile();
   else if (action === "start-setup") renderSetup(1);
@@ -918,7 +948,13 @@ async function handleClick(event) {
     if (theme) { await saveSettings({ themeId: theme.id, accent: theme.accent, accent2: theme.accent2, accentSoft: theme.soft, accentSofter: theme.softer, accentInk: theme.ink }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color actualizado", "success"); }
   } else if (action === "save-custom-theme") {
     const accent = document.getElementById("customAccent")?.value;
-    if (accent) { await saveSettings({ themeId: "custom", accent, accent2: `color-mix(in srgb, ${accent} 58%, white)`, accentSoft: `color-mix(in srgb, ${accent} 13%, #fffaf4)`, accentSofter: `color-mix(in srgb, ${accent} 5%, #fffaf4)`, accentInk: `color-mix(in srgb, ${accent} 58%, #241a2d)` }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color y fondo guardados", "success"); }
+    if (accent) { await saveSettings({ themeId: "custom", accent, accent2: `color-mix(in srgb, ${accent} 58%, white)`, accentSoft: `color-mix(in srgb, ${accent} 13%, #fffaf4)`, accentSofter: `color-mix(in srgb, ${accent} 5%, #fffaf4)`, accentInk: `color-mix(in srgb, ${accent} 58%, #241a2d)` }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color guardado", "success"); }
+  } else if (action === "apply-background") {
+    const background = BACKGROUNDS.find((item) => item.id === target.dataset.background);
+    if (background) { await saveSettings({ backgroundId: background.id, backgroundColor: background.base, backgroundWarm: background.warm, backgroundHeader: background.header, backgroundHeader2: background.header2, backgroundPanel: background.panel, backgroundPanel2: background.panel2, backgroundLine: background.line }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Fondo actualizado", "success"); }
+  } else if (action === "save-custom-background") {
+    const backgroundColor = document.getElementById("customBackground")?.value;
+    if (backgroundColor) { await saveSettings({ backgroundId: "custom", backgroundColor, backgroundWarm: `color-mix(in srgb, ${backgroundColor} 35%, white)`, backgroundHeader: `color-mix(in srgb, ${backgroundColor} 72%, white)`, backgroundHeader2: `color-mix(in srgb, ${backgroundColor} 42%, white)`, backgroundPanel: `color-mix(in srgb, ${backgroundColor} 62%, white)`, backgroundPanel2: `color-mix(in srgb, ${backgroundColor} 28%, white)`, backgroundLine: `color-mix(in srgb, ${backgroundColor} 75%, #aaa)` }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Fondo guardado", "success"); }
   } else if (action === "delete-movement") {
     if (confirm("¿Eliminar este movimiento? Esta acción solo afecta tus datos en este dispositivo.")) { await store.remove("movements", target.dataset.id); await loadData(); closeModal(); render(); toast("Movimiento eliminado"); }
   } else if (action === "delete-catalog") {
