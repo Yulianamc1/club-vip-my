@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Plataforma VIP V144 · Planes editables, visibles y guardado confirmado</title>
+  <title>Plataforma VIP V163 · Planes, renovaciones y Finanzas integradas</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #2a1142; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -18,7 +18,7 @@
       This page requires JavaScript to display.
     </div>
   </noscript>
-<!-- MY VIP V145: herramientas universalizadas para productos, servicios o ambos. Cursos, videos y academia intactos. -->
+<!-- MY VIP V163: dos planes públicos, precio fundador, renovaciones, mensajes y Finanzas integradas. -->
 </head>
 <body>
   <div id="__bundler_thumbnail">
@@ -1344,7 +1344,225 @@ setTimeout(run,350);setTimeout(run,1100);
       'function start(){observer.observe(document.documentElement,{childList:true,subtree:true});ensurePanel();setInterval(ensurePanel,1200);}' +
       'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();' +
       '})();</scr' + 'ipt>';
-    template = template.replace(/<\/body>/i, hideDriveButtonScript + novedadesManagerScript + '</body>');
+
+    // V161: Google Drive vive dentro de un iframe. Ocultar la Academia no lo
+    // detiene, así que destruimos el reproductor al cerrar, regresar o cambiar
+    // de pantalla. Esto elimina el audio fantasma sin tocar progreso o clases.
+    const v161AcademyCloseNeedle = "function close(){if(!overlay)return;overlay.classList.remove('open');overlay.setAttribute('aria-hidden','true');document.documentElement.classList.remove('v27-lock');currentCourse=null;currentDetail=null;classList=[];currentClassIndex=-1;adminPreviewMode=false;}";
+    const v161AcademyCloseReplacement = `function stopAcademyMedia(){
+    if(!body)return;
+    body.querySelectorAll('video,audio').forEach(function(media){
+      try{media.pause();media.currentTime=0;media.removeAttribute('src');media.load();}catch(_){}
+    });
+    body.querySelectorAll('.v27-player iframe').forEach(function(frame){
+      try{frame.src='about:blank';}catch(_){}
+      try{frame.remove();}catch(_){}
+    });
+  }
+  function close(){if(!overlay)return;stopAcademyMedia();if(body)body.innerHTML='';overlay.classList.remove('open');overlay.setAttribute('aria-hidden','true');document.documentElement.classList.remove('v27-lock');currentCourse=null;currentDetail=null;classList=[];currentClassIndex=-1;adminPreviewMode=false;}`;
+    if (template.includes(v161AcademyCloseNeedle)) {
+      template = template.replace(v161AcademyCloseNeedle, v161AcademyCloseReplacement);
+    } else {
+      console.warn('[V161] No se encontró el cierre original de Academia.');
+    }
+
+    const v161AcademyBackNeedle = "function setBack(fn){var b=overlay.querySelector('#v27-back');if(fn){b.style.display='inline-flex';b.onclick=fn;}else{b.style.display='none';b.onclick=null;}}";
+    const v161AcademyBackReplacement = "function setBack(fn){var b=overlay.querySelector('#v27-back');if(fn){b.style.display='inline-flex';b.onclick=function(){stopAcademyMedia();fn();};}else{b.style.display='none';b.onclick=null;}}";
+    if (template.includes(v161AcademyBackNeedle)) {
+      template = template.replace(v161AcademyBackNeedle, v161AcademyBackReplacement);
+    } else {
+      console.warn('[V161] No se encontró el botón Regresar de Academia.');
+    }
+
+    const v161AcademyClassNeedle = "function renderClass(l){\n    var preview=drivePreview(l.drive_url)";
+    const v161AcademyClassReplacement = "function renderClass(l){\n    stopAcademyMedia();\n    var preview=drivePreview(l.drive_url)";
+    if (template.includes(v161AcademyClassNeedle)) {
+      template = template.replace(v161AcademyClassNeedle, v161AcademyClassReplacement);
+    } else {
+      console.warn('[V161] No se encontró el cambio de clase de Academia.');
+    }
+
+    const v161AcademyLoadingNeedle = "function loading(txt){body.innerHTML='<div class=\"v27-loading\"><span></span><h3>'+esc(txt||'Cargando…')+'</h3><p>La información se consulta solo cuando entras a esta sección.</p></div>';}";
+    const v161AcademyLoadingReplacement = "function loading(txt){stopAcademyMedia();body.innerHTML='<div class=\"v27-loading\"><span></span><h3>'+esc(txt||'Cargando…')+'</h3><p>La información se consulta solo cuando entras a esta sección.</p></div>';}";
+    if (template.includes(v161AcademyLoadingNeedle)) {
+      template = template.replace(v161AcademyLoadingNeedle, v161AcademyLoadingReplacement);
+    } else {
+      console.warn('[V161] No se encontró la transición de Academia.');
+    }
+
+    // V160: conserva las Finanzas administrativas en su archivo propio y
+    // agrega a cada integrante un acceso separado a sus Finanzas privadas.
+    // El puente contiene Código VIP, nombre, plan y autorización temporal;
+    // todos los movimientos permanecen en IndexedDB dentro del dispositivo.
+    template = template.split('admin-finanzas-v92.html').join('admin-finanzas-v93.html');
+    const v160FinanceIntegration = `
+<style id="vip-v160-client-finance-css">
+#vip-v160-finance-card{position:relative;overflow:hidden;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;margin:0 0 22px;padding:20px;border:1px solid rgba(109,58,160,.22);border-radius:22px;background:linear-gradient(135deg,#fff 0%,#fbf7ff 55%,#f4ecfb 100%);box-shadow:0 13px 30px rgba(43,18,69,.10);color:#241733}
+#vip-v160-finance-card:before{content:"";position:absolute;right:-55px;top:-75px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,rgba(109,58,160,.18),transparent 68%);pointer-events:none}
+.vip-v160-finance-icon{position:relative;display:grid;place-items:center;width:62px;height:62px;border-radius:19px;background:linear-gradient(145deg,#2c1245,#6d3aa0);color:#f3dea2;font-size:28px;box-shadow:0 13px 27px rgba(43,18,69,.25)}
+.vip-v160-finance-copy{position:relative;min-width:0}.vip-v160-finance-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:5px}.vip-v160-finance-top h2{margin:0;font-family:'Playfair Display',Georgia,serif;font-size:22px;color:#2b1936}.vip-v160-private{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:#e8f6ef;color:#176347;border:1px solid #caeadb;font-size:9px;font-weight:950;letter-spacing:.08em}
+.vip-v160-finance-copy p{margin:0;color:#716579;font-size:12.5px;line-height:1.55}.vip-v160-finance-copy p b{color:#4b2a61}.vip-v160-backup-note{margin-top:8px!important;padding:8px 10px;border-radius:11px;background:#fff5e8;color:#724913!important;border:1px solid #efd7b4;font-size:11.5px!important}
+.vip-v160-finance-open{position:relative;border:0;border-radius:999px;padding:13px 19px;background:linear-gradient(90deg,#6d3aa0,#9a68bd);color:#fff;font-size:12px;font-weight:950;white-space:nowrap;box-shadow:0 9px 22px rgba(109,58,160,.25);cursor:pointer}.vip-v160-finance-open:hover{transform:translateY(-1px);box-shadow:0 12px 27px rgba(109,58,160,.33)}
+@media(max-width:760px){#vip-v160-finance-card{grid-template-columns:auto 1fr;padding:16px;gap:12px}.vip-v160-finance-icon{width:52px;height:52px;font-size:24px}.vip-v160-finance-open{grid-column:1/-1;width:100%}.vip-v160-finance-top h2{font-size:19px}}
+</style>
+<script id="vip-v160-client-finance-js">
+(function(){
+  'use strict';
+  if(window.__VIP_V160_FINANCE__)return;
+  window.__VIP_V160_FINANCE__=true;
+  var BRIDGE='vip_finance_context_v1',PATH='finanzas-clientes/index.html',timer=0;
+  function app(){return window.__VIP_APP__||null;}
+  function clean(v){return String(v==null?'':v).trim();}
+  function member(){var a=app(),s=a&&a.state;if(!(a&&s&&s.view==='app'&&s.session&&s.session.codigo))return null;return s.session;}
+  function clearBridge(){try{sessionStorage.removeItem(BRIDGE);}catch(_){}}
+  function openFinance(ev){
+    if(ev){ev.preventDefault();ev.stopPropagation();}
+    var s=member();
+    if(!s){clearBridge();window.alert('Inicia sesión como integrante para abrir Mis Finanzas.');return;}
+    var code=clean(s.codigo).toUpperCase();
+    if(!code){window.alert('No pudimos identificar esta cuenta. Vuelve a iniciar sesión.');return;}
+    var payload={userId:'vip-member:'+code,displayName:clean(s.nombre)||'Mi negocio',issuedAt:Date.now()};
+    try{sessionStorage.setItem(BRIDGE,JSON.stringify(payload));}
+    catch(_){window.alert('Tu navegador no permitió abrir el espacio privado. Revisa que el almacenamiento esté habilitado.');return;}
+    location.assign(new URL(PATH,location.href).href);
+  }
+  window.vipV160OpenClientFinance=openFinance;
+  function labelNode(){
+    var all=document.querySelectorAll('div');
+    for(var i=0;i<all.length;i++)if(clean(all[i].textContent)==='TU MEMBRESÍA')return all[i];
+    return null;
+  }
+  function membershipCard(){
+    var n=labelNode();
+    for(var i=0;n&&i<6;i++,n=n.parentElement){
+      if(n.querySelector&&n.querySelector('a[href*="wa.me"]')&&clean(n.textContent).indexOf('TU MEMBRESÍA')>=0)return n;
+    }
+    return null;
+  }
+  function buildCard(){
+    var card=document.createElement('section');card.id='vip-v160-finance-card';card.setAttribute('aria-label','Mis Finanzas privadas');
+    card.innerHTML='<div class="vip-v160-finance-icon" aria-hidden="true">📊</div><div class="vip-v160-finance-copy"><div class="vip-v160-finance-top"><h2>Mis Finanzas</h2><span class="vip-v160-private">● PRIVADO EN TU DISPOSITIVO</span></div><p>Organiza ventas, gastos, cobros, productos o servicios, reportes y SAT. <b>MY no puede ver estos datos y no se guardan en Supabase.</b></p><p class="vip-v160-backup-note"><b>¿Abrirás desde otro celular o computadora?</b> Descarga primero tu respaldo y, en el otro dispositivo, pulsa “Restaurar mis datos”.</p></div><button type="button" class="vip-v160-finance-open">Abrir mi dashboard →</button>';
+    card.querySelector('button').addEventListener('click',openFinance);
+    return card;
+  }
+  function wrapLogout(a){
+    if(!a||a.__vipV160LogoutWrapped||typeof a.doLogout!=='function')return;
+    var original=a.doLogout;a.__vipV160LogoutWrapped=true;
+    a.doLogout=function(){clearBridge();return original.apply(this,arguments);};
+  }
+  function ensure(){
+    var a=app();wrapLogout(a);
+    var s=member(),old=document.getElementById('vip-v160-finance-card');
+    if(!s){if(old)old.remove();return;}
+    if(old)return;
+    var anchor=membershipCard()||document.querySelector('[data-vip-dashboard-home="1"]');
+    if(anchor)anchor.insertAdjacentElement('afterend',buildCard());
+  }
+  function schedule(){if(timer)return;timer=setTimeout(function(){timer=0;ensure();},90);}
+  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensure,{once:true});else ensure();
+  setInterval(ensure,1200);
+})();
+<\/script>`;
+    const v162FinanceAndControlCenter = `
+<style id="vip-v162-finance-control-css">
+.vip-v162-finance-locked{filter:saturate(.78)}
+.vip-v162-finance-locked .vip-v160-private{background:#f4edf8;color:#67437b;border-color:#dccbe6}
+.vip-v162-tools-card{margin:15px 0 19px!important}
+.vip-v162-control-group{margin:0 0 25px}.vip-v162-control-group-head{margin:0 0 11px}.vip-v162-control-group-head h2{margin:0;font-family:'Playfair Display',Georgia,serif;font-size:20px;color:#241733}.vip-v162-control-group-head p{margin:4px 0 0;color:#7a7186;font-size:12px;line-height:1.5}
+#vip-v162-finance-overlay{position:fixed;inset:0;z-index:2147483500;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(22,8,38,.78);backdrop-filter:blur(8px);font-family:Inter,system-ui,sans-serif}
+#vip-v162-finance-overlay .vip-v162-box{width:min(650px,100%);max-height:min(780px,92vh);overflow:auto;box-sizing:border-box;background:#fff;border:1px solid rgba(212,175,55,.35);border-radius:24px;padding:23px;box-shadow:0 30px 75px rgba(18,5,32,.42);color:#241733}
+#vip-v162-finance-overlay .vip-v162-mark{width:54px;height:54px;display:grid;place-items:center;border-radius:18px;background:linear-gradient(135deg,#2c1245,#6d3aa0);color:#f3e2b0;font-size:25px;margin-bottom:13px}
+#vip-v162-finance-overlay h2{font-family:'Playfair Display',Georgia,serif;font-size:27px;line-height:1.15;margin:0;color:#241733}#vip-v162-finance-overlay .vip-v162-intro{color:#74687d;font-size:12.5px;line-height:1.55;margin:7px 0 17px}
+.vip-v162-plan-grid{display:grid;gap:10px}.vip-v162-plan-row{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;padding:13px;border:1px solid #e9e0ed;border-radius:15px;background:#faf7fb;cursor:pointer}.vip-v162-plan-row input{width:20px;height:20px;accent-color:#6d3aa0}.vip-v162-plan-row b{display:block;font-size:13px}.vip-v162-plan-row small{display:block;color:#817588;font-size:11px;line-height:1.4;margin-top:3px}
+.vip-v162-overlay-actions{display:flex;gap:9px;margin-top:17px}.vip-v162-overlay-actions button{flex:1;border:0;border-radius:999px;padding:12px 15px;font-weight:900;cursor:pointer}.vip-v162-primary{background:linear-gradient(90deg,#6d3aa0,#9a68bd);color:#fff}.vip-v162-secondary{background:#f5eff8;color:#5f3a73;border:1px solid #ddcfe5!important}.vip-v162-status{min-height:19px;margin-top:10px;text-align:center;color:#2f7d5b;font-size:12px;font-weight:800}
+.vip-v162-locked-benefits{display:grid;gap:9px;margin:17px 0}.vip-v162-locked-benefits div{padding:11px 12px;border-radius:13px;background:#faf7fb;border:1px solid #e9e0ed;font-size:12px;color:#594a62}.vip-v162-locked-benefits b{color:#3b1b51}
+@media(max-width:760px){#vip-v162-finance-overlay .vip-v162-box{padding:19px 16px;border-radius:21px}#vip-v162-finance-overlay h2{font-size:24px}.vip-v162-overlay-actions{flex-direction:column}.vip-v162-control-group-head h2{font-size:18px}}
+</style>
+<script id="vip-v162-finance-control-js">
+(function(){
+  'use strict';
+  if(window.__VIP_V162_FINANCE_CONTROL__)return;
+  window.__VIP_V162_FINANCE_CONTROL__=true;
+  var BRIDGE='vip_finance_context_v1',PATH='finanzas-clientes/index.html',timer=0;
+  function app(){return window.__VIP_APP__||null;}
+  function clean(v){return String(v==null?'':v).replace(/\\s+/g,' ').trim();}
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function member(){var a=app(),s=a&&a.state;if(!(a&&s&&s.view==='app'&&s.session&&s.session.codigo))return null;return s.session;}
+  function planKey(session){var a=app(),plans=a&&a.state&&a.state.planes||{},raw=clean(session&&session.plan);if(plans[raw])return raw;var keys=Object.keys(plans),found=keys.find(function(k){return clean(plans[k]&&plans[k].nombre).toLowerCase()===raw.toLowerCase();});return found||raw||'Básico';}
+  function defaultAccess(key){return key!=='Básico';}
+  function hasAccess(session){var a=app(),plans=a&&a.state&&a.state.planes||{},key=planKey(session),p=plans[key]||{};return typeof p.finanzasIncluidas==='boolean'?p.finanzasIncluidas:defaultAccess(key);}
+  function clearBridge(){try{sessionStorage.removeItem(BRIDGE);}catch(_){}}
+  function closeOverlay(){var o=document.getElementById('vip-v162-finance-overlay');if(o)o.remove();}
+  function goMembership(){closeOverlay();var a=app();if(a&&a.state&&typeof a.setState==='function')a.setState({sub:'membresia'});}
+  function showLocked(session){
+    closeOverlay();clearBridge();var a=app(),plans=a&&a.state&&a.state.planes||{},key=planKey(session),name=clean(plans[key]&&plans[key].nombre)||key;
+    var o=document.createElement('div');o.id='vip-v162-finance-overlay';o.innerHTML='<div class="vip-v162-box" role="dialog" aria-modal="true" aria-labelledby="vip-v162-title"><div class="vip-v162-mark">🔒</div><h2 id="vip-v162-title">Finanzas está disponible en otros planes</h2><p class="vip-v162-intro">Puedes ver esta herramienta desde tu plan '+esc(name)+', pero necesitas un plan que incluya Finanzas para abrir tu espacio privado.</p><div class="vip-v162-locked-benefits"><div><b>Registros fáciles:</b> ingresos, ventas, trabajos o servicios y gastos.</div><div><b>Organización:</b> facturas, SAT, régimen y cierre mensual.</div><div><b>Privacidad:</b> tus movimientos permanecen en tu dispositivo.</div></div><div class="vip-v162-overlay-actions"><button class="vip-v162-primary" type="button" data-v162-membership>Ver mi membresía</button><button class="vip-v162-secondary" type="button" data-v162-close>Cerrar</button></div></div>';
+    document.body.appendChild(o);o.querySelector('[data-v162-close]').onclick=closeOverlay;o.querySelector('[data-v162-membership]').onclick=goMembership;o.onclick=function(e){if(e.target===o)closeOverlay();};
+  }
+  function openFinance(ev){
+    if(ev){ev.preventDefault();ev.stopPropagation();}
+    var s=member();if(!s){clearBridge();window.alert('Inicia sesión como integrante para abrir Mis Finanzas.');return;}
+    if(!hasAccess(s)){showLocked(s);return;}
+    var code=clean(s.codigo).toUpperCase();if(!code){clearBridge();window.alert('No pudimos identificar esta cuenta. Vuelve a iniciar sesión.');return;}
+    var payload={userId:'vip-member:'+code,displayName:clean(s.nombre)||'Mi negocio',plan:planKey(s),financeAccess:true,issuedAt:Date.now()};
+    try{sessionStorage.setItem(BRIDGE,JSON.stringify(payload));}catch(_){window.alert('Tu navegador no permitió abrir el espacio privado. Revisa que el almacenamiento esté habilitado.');return;}
+    location.assign(new URL(PATH,location.href).href);
+  }
+  window.vipV160OpenClientFinance=openFinance;window.vipV162OpenClientFinance=openFinance;
+  function membershipCard(){var all=document.querySelectorAll('div');for(var i=0;i<all.length;i++){if(clean(all[i].textContent)==='TU MEMBRESÍA'){var n=all[i];for(var j=0;n&&j<6;j++,n=n.parentElement){if(n.querySelector&&n.querySelector('a[href*="wa.me"]')&&clean(n.textContent).indexOf('TU MEMBRESÍA')>=0)return n;}}}return null;}
+  function buildFinanceCard(id,tools){
+    var s=member(),allowed=s&&hasAccess(s),card=document.createElement('section');card.id=id;card.className=(tools?'vip-v162-tools-card ':'')+(allowed?'':'vip-v162-finance-locked');card.setAttribute('aria-label','Mis Finanzas');
+    card.innerHTML='<div class="vip-v160-finance-icon" aria-hidden="true">📊</div><div class="vip-v160-finance-copy"><div class="vip-v160-finance-top"><h2>Mis Finanzas</h2><span class="vip-v160-private">'+(allowed?'● INCLUIDO EN TU PLAN':'🔒 VISTA PREVIA')+'</span></div><p>Registra fácilmente <b>ingresos, ventas, trabajos o servicios y gastos</b>. También organiza facturas, SAT, régimen y tu cierre mensual.</p><p class="vip-v160-backup-note">'+(allowed?'<b>Tu espacio es privado.</b> Los movimientos permanecen en este dispositivo; recuerda descargar respaldos.':'<b>Conoce la herramienta.</b> Puedes verla desde cualquier plan y solicitar acceso cuando la necesites.')+'</p></div><button class="vip-v160-finance-open" type="button">'+(allowed?'Abrir Mis Finanzas →':'Ver qué incluye 🔒')+'</button>';
+    card.querySelector('button').onclick=openFinance;return card;
+  }
+  function ensureHomeCard(){var s=member(),old=document.getElementById('vip-v160-finance-card');if(!s){if(old)old.remove();return;}if(old&&old.dataset.v162==='1')return;if(old)old.remove();var anchor=membershipCard();if(!anchor)return;var card=buildFinanceCard('vip-v160-finance-card',false);card.dataset.v162='1';anchor.insertAdjacentElement('afterend',card);}
+  function ensureToolsCard(){var s=member(),old=document.getElementById('vip-v162-finance-tools-card'),title=Array.prototype.find.call(document.querySelectorAll('.vip-v101-section-title'),function(x){return clean(x.textContent).indexOf('Herramientas de Venta')>=0;});if(!(s&&title)){if(old)old.remove();return;}if(old)return;var sub=title.nextElementSibling||title;sub.insertAdjacentElement('afterend',buildFinanceCard('vip-v162-finance-tools-card',true));}
+  function ensureSidebar(){
+    var s=member();if(!s){document.querySelectorAll('.vip-v162-sidebar-finance').forEach(function(x){x.remove();});return;}
+    var labels=Array.prototype.filter.call(document.querySelectorAll('button span'),function(x){return clean(x.textContent)==='Herramientas de Venta';});
+    labels.forEach(function(label){var ref=label.closest('button');if(!ref||ref.nextElementSibling&&ref.nextElementSibling.classList.contains('vip-v162-sidebar-finance'))return;var b=ref.cloneNode(true);b.classList.add('vip-v162-sidebar-finance');b.removeAttribute('onclick');var spans=b.querySelectorAll('span'),labelCopy=Array.prototype.find.call(spans,function(x){return clean(x.textContent)==='Herramientas de Venta';});if(labelCopy){labelCopy.textContent='Finanzas';var icon=labelCopy.previousElementSibling,lock=labelCopy.nextElementSibling;if(icon)icon.textContent='▥';if(lock)lock.textContent=hasAccess(s)?'':'🔒';}else b.textContent='▥ Finanzas'+(hasAccess(s)?'':' 🔒');b.onclick=openFinance;ref.insertAdjacentElement('afterend',b);
+    });
+  }
+  function syntheticCard(source,title,icon,desc,handler){var c=source.cloneNode(true),i=c.querySelector('.vip-admin-icon'),t=c.querySelector('.vip-admin-card-title'),d=c.querySelector('.vip-admin-card-sub');if(i)i.textContent=icon;if(t)t.textContent=title;if(d)d.textContent=desc;c.removeAttribute('onclick');c.onclick=handler;return c;}
+  function openFinanceAdmin(){
+    closeOverlay();var a=app(),plans=a&&a.state&&a.state.planes||{},keys=['Básico','VIP','VIP Pro'];var rows=keys.map(function(k){var p=plans[k]||{},on=typeof p.finanzasIncluidas==='boolean'?p.finanzasIncluidas:defaultAccess(k);return '<label class="vip-v162-plan-row"><input type="checkbox" data-v162-plan="'+esc(k)+'" '+(on?'checked':'')+'><span><b>'+esc(p.nombre||k)+'</b><small>'+(on?'Las integrantes de este plan pueden abrir y usar Finanzas.':'La herramienta se muestra bloqueada para que conozcan lo que incluye.')+'</small></span></label>';}).join('');
+    var o=document.createElement('div');o.id='vip-v162-finance-overlay';o.innerHTML='<div class="vip-v162-box" role="dialog" aria-modal="true" aria-labelledby="vip-v162-admin-title"><div class="vip-v162-mark">📊</div><h2 id="vip-v162-admin-title">Administración de Finanzas de clientes</h2><p class="vip-v162-intro"><b>¿Quién puede acceder?</b><br>Elige los planes que incluyen Finanzas. En los demás planes seguirá apareciendo como vista previa bloqueada.</p><div class="vip-v162-plan-grid">'+rows+'</div><div class="vip-v162-overlay-actions"><button class="vip-v162-primary" type="button" data-v162-save>Guardar accesos</button><button class="vip-v162-secondary" type="button" data-v162-close>Cerrar</button></div><div class="vip-v162-status" aria-live="polite"></div></div>';
+    document.body.appendChild(o);o.querySelector('[data-v162-close]').onclick=closeOverlay;o.onclick=function(e){if(e.target===o)closeOverlay();};
+    o.querySelectorAll('[data-v162-plan]').forEach(function(input){input.onchange=function(){var key=input.dataset.v162Plan;a.setState(function(state){var next=Object.assign({},state.planes),plan=Object.assign({},next[key]||{});plan.finanzasIncluidas=input.checked;next[key]=plan;return{planes:next};});var small=input.parentElement.querySelector('small');if(small)small.textContent=input.checked?'Las integrantes de este plan pueden abrir y usar Finanzas.':'La herramienta se muestra bloqueada para que conozcan lo que incluye.';};});
+    o.querySelector('[data-v162-save]').onclick=function(){var btn=this,status=o.querySelector('.vip-v162-status');btn.disabled=true;btn.textContent='Guardando…';try{localStorage.setItem('vip_planes',JSON.stringify(a.state.planes));}catch(_){}Promise.resolve(typeof a.persistPlanes==='function'?a.persistPlanes():null).then(function(){status.textContent='Accesos de Finanzas guardados correctamente.';btn.textContent='Guardado ✓';setTimeout(function(){btn.disabled=false;btn.textContent='Guardar accesos';},1600);}).catch(function(){status.textContent='No se pudo guardar. Revisa la conexión e inténtalo nuevamente.';btn.disabled=false;btn.textContent='Guardar accesos';});};
+  }
+  window.vipV162OpenFinanceAdmin=openFinanceAdmin;
+  function ensureControlCenter(){
+    var a=app(),state=a&&a.state;if(!(a&&state&&state.view==='admin'&&state.adminSection==='hub'))return;var original=document.querySelector('.vip-v58-admin-grid');if(!original||document.getElementById('vip-v162-control-groups'))return;var originals=Array.prototype.slice.call(original.children).filter(function(x){return x.classList&&x.classList.contains('vip-admin-card');}),byTitle={};originals.forEach(function(c){var t=c.querySelector('.vip-admin-card-title');if(t)byTitle[clean(t.textContent)]=c;});if(!originals.length)return;
+    var actualAdminFinance=Array.prototype.find.call(document.querySelectorAll('button'),function(b){return !b.closest('#vip-v162-control-groups')&&clean(b.textContent).indexOf('Administración, Finanzas y SAT')>=0;});
+    var defs=[
+      {title:'👥 Administración de clientes',desc:'Personas, atención y servicios que ofreces directamente a tus clientes.',items:['Miembros','Servicio al Cliente','Consultas Estratégicas']},
+      {title:'👑 Mi plataforma y mi administración',desc:'Planes, cobros, accesos, promociones y la operación interna de tu plataforma.',items:['Membresías y Pagos','Beneficios por Plan','Accesos por Plan','Promos, Descuentos y Regalos','Países y monedas']},
+      {title:'🧩 Herramientas y GPTs',desc:'Herramientas, ayudantes, materiales y experiencias que usan las integrantes.',items:['Herramientas del sistema','Ayudantes VIP','Material semanal, quincenal o mensual','Academia VIP','Clase Grupal Semanal Exclusiva','Gamificación']},
+      {title:'📣 Contenido y navegación',desc:'Lo que publicas, destacas y acomodas para que las integrantes lo encuentren.',items:['Novedades del Club','Lo más poderoso','Tarjetas del Inicio','Barra lateral']}
+    ];
+    var used={},wrap=document.createElement('div');wrap.id='vip-v162-control-groups';
+    function addGroup(def,cards){if(!cards.length)return;var sec=document.createElement('section');sec.className='vip-v162-control-group';sec.innerHTML='<div class="vip-v162-control-group-head"><h2>'+esc(def.title)+'</h2><p>'+esc(def.desc)+'</p></div><div class="vip-admin-grid"></div>';var grid=sec.querySelector('.vip-admin-grid');cards.forEach(function(c){grid.appendChild(c);});wrap.appendChild(sec);}
+    defs.forEach(function(def){var cards=[];def.items.forEach(function(name){var src=byTitle[name];if(!src)return;used[name]=true;var clone=src.cloneNode(true);clone.removeAttribute('onclick');clone.onclick=function(){src.click();};cards.push(clone);});if(def.title.indexOf('Mi plataforma')>=0&&actualAdminFinance){cards.push(syntheticCard(originals[0],'Mis Finanzas administrativas','💼','Tus suscripciones automáticas, ingresos, gastos, facturas, SAT y cierres.',function(){actualAdminFinance.click();}));}addGroup(def,cards);});
+    addGroup({title:'📊 Finanzas de clientes',desc:'Controla quién puede usar el registro manual de ingresos, trabajos, gastos, facturas, SAT y cierre mensual.'},[syntheticCard(originals[0],'Administración de Finanzas de clientes','📊','Elige qué planes pueden acceder; los demás la verán bloqueada.',openFinanceAdmin)]);
+    var rest=originals.filter(function(c){var t=c.querySelector('.vip-admin-card-title');return t&&!used[clean(t.textContent)];}).map(function(src){var clone=src.cloneNode(true);clone.removeAttribute('onclick');clone.onclick=function(){src.click();};return clone;});addGroup({title:'Otras secciones',desc:'Accesos adicionales del Centro de Control.'},rest);
+    original.style.display='none';var heading=original.previousElementSibling;if(heading&&heading.classList.contains('vip-admin-all-sections-title'))heading.textContent='Centro de Control organizado por áreas';original.insertAdjacentElement('beforebegin',wrap);
+  }
+  function wrapLogout(a){if(!a||a.__vipV162LogoutWrapped||typeof a.doLogout!=='function')return;var old=a.doLogout;a.__vipV162LogoutWrapped=true;a.doLogout=function(){clearBridge();return old.apply(this,arguments);};}
+  function ensure(){var a=app();wrapLogout(a);var s=member();if(s&&!hasAccess(s))clearBridge();ensureHomeCard();ensureToolsCard();ensureSidebar();ensureControlCenter();}
+  function schedule(){if(timer)return;timer=setTimeout(function(){timer=0;ensure();},100);}
+  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensure,{once:true});else ensure();setInterval(ensure,1200);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closeOverlay();});
+})();
+<\/script>`;
+    // V163 vive en archivos separados para que el Centro de Control comercial
+    // se pueda mantener sin volver a empaquetar el resto de la plataforma.
+    // Las tres claves internas siguen existiendo por compatibilidad, pero solo
+    // VIP y VIP Pro quedan visibles al público.
+    const v163MembershipCenter = '<link rel="stylesheet" href="centro-control-v163.css">' +
+      '<scr' + 'ipt src="centro-control-v163.js"></scr' + 'ipt>';
+    template = template.replace(/<\/body>/i, hideDriveButtonScript + novedadesManagerScript + v160FinanceIntegration + v162FinanceAndControlCenter + v163MembershipCenter + '</body>');
 
     // Parse the template and swap the root element. Scripts inserted via
     // DOMParser/replaceWith are inert per spec — re-create each with
