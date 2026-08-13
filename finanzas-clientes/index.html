@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#6d3bd1">
+  <meta name="theme-color" content="#76549d">
   <meta name="description" content="Finanzas privadas de la Plataforma VIP">
   <title>Mis Finanzas · Plataforma VIP</title>
-  <link rel="stylesheet" href="./finanzas-clientes.css">
+  <link rel="stylesheet" href="./finanzas-clientes.css?v=164">
 </head>
 <body>
   <div id="financeApp" class="finance-loading" aria-live="polite">
@@ -45,7 +45,7 @@
     if (window.MYVIP_FINANCE_CONTEXT.userId) {
       const module = document.createElement("script");
       module.type = "module";
-      module.src = "./finanzas-clientes.js";
+      module.src = "./finanzas-clientes.js?v=164";
       document.body.appendChild(module);
     }
   </script>
