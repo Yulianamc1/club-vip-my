@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#76549d">
+  <meta name="description" content="Finanzas privadas de la Plataforma VIP">
+  <title>Mis Finanzas · Plataforma VIP</title>
+  <link rel="stylesheet" href="./finanzas-clientes.css?v=164">
+</head>
+<body>
+  <div id="financeApp" class="finance-loading" aria-live="polite">
+    <div class="loading-card">
+      <span class="loading-mark" aria-hidden="true">MY</span>
+      <h1>Preparando tus finanzas</h1>
+      <p>Estamos abriendo tu espacio privado en este dispositivo.</p>
+      <div class="loader" aria-hidden="true"></div>
+    </div>
+  </div>
+  <script>
+    // La cuenta llega desde el index principal por sessionStorage. Esta llave
+    // solo contiene identidad de sesión; nunca contiene movimientos financieros.
+    let financeContext = null;
+    try {
+      financeContext = JSON.parse(sessionStorage.getItem("vip_finance_context_v1") || "null");
+    } catch (_) {}
+    const financeAllowed = Boolean(
+      financeContext && financeContext.userId && financeContext.financeAccess === true
+    );
+    window.MYVIP_FINANCE_CONTEXT = financeAllowed
+      ? { userId: financeContext.userId, displayName: financeContext.displayName || "Mi negocio", demo: false }
+      : {};
+    window.MYVIP_FINANCE_PLATFORM_URL = "../index.html";
+    if (!financeAllowed) {
+      document.getElementById("financeApp").innerHTML = `
+        <div class="loading-card">
+          <span class="loading-mark" aria-hidden="true">🔒</span>
+          <h1>Finanzas no está incluida en este acceso</h1>
+          <p>Regresa a la plataforma para consultar los planes que incluyen esta herramienta.</p>
+          <a class="button primary finance-return" href="../index.html">Volver a la plataforma</a>
+        </div>`;
+    }
+  </script>
+  <script>
+    if (window.MYVIP_FINANCE_CONTEXT.userId) {
+      const module = document.createElement("script");
+      module.type = "module";
+      module.src = "./finanzas-clientes.js?v=164";
+      document.body.appendChild(module);
+    }
+  </script>
+</body>
+</html>
