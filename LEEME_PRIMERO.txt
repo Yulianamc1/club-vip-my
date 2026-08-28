@@ -1,0 +1,17 @@
+MY V182 — PAQUETE PARA GITHUB + VERCEL
+
+ARCHIVOS A SUBIR
+- index.html
+- vercel.json
+- .gitignore
+
+IMPORTANTE
+1. Esta versión NO contiene el acceso local temporal de V181.
+2. Está conectada al proyecto real de Supabase con la clave PUBLICABLE del frontend. No contiene service_role ni claves privadas.
+3. Después de desplegar en Vercel, copia tu URL final (por ejemplo https://tu-proyecto.vercel.app).
+4. En Supabase ve a Authentication > URL Configuration y agrega esa URL como Site URL / Redirect URL según corresponda. Esto es necesario para recuperación de contraseña y enlaces de Auth.
+5. Prueba antes de compartir públicamente: login administradora, recuperación de contraseña, login miembro, Finanzas, SúmaMY, planes y cierre de sesión.
+6. Este primer despliegue está marcado noindex/nofollow para que los buscadores no lo indexen mientras haces pruebas. Cuando apruebes todo, se puede quitar.
+
+MONEDAS
+La versión actual conserva el selector de país/moneda y equivalencias configuradas dentro de MY. La actualización automática diaria de tipo de cambio NO se activó todavía en este paquete, para no depender de una API externa sin probarla primero.
