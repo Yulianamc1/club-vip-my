@@ -1,0 +1,56 @@
+MY · ACTUALIZACIÓN GITHUB · 01/09/2026
+
+ESTE PAQUETE ES PARA ACTUALIZAR EL REPOSITORIO EXISTENTE:
+Yulianamc1/club-vip-my
+
+NO BORRES TODO EL REPOSITORIO.
+Sube/combina este paquete SOBRE el repositorio actual.
+
+ARCHIVOS QUE SÍ DEBES REEMPLAZAR O AGREGAR:
+1) index.html
+   - REEMPLAZA el index.html anterior.
+   - Es la versión que acabamos de probar localmente y que permitió entrar al Panel Admin.
+   - Conserva el arranque morado, la protección de hidratación, el nuevo nombre,
+     la reactivación de cuentas anteriores y el área de código promocional pausada.
+
+2) finanzas-control-v166.js
+   - AGRÉGALO en la raíz del repositorio si no aparece.
+   - El index actual lo carga como: finanzas-control-v166.js?v=168
+
+3) supabase/migrations/20260901_fix_readonly_rpc_security_guard.sql
+   - Es SOLO el registro técnico de la reparación de hoy.
+   - La reparación YA está aplicada en Supabase.
+   - NO necesitas ejecutar manualmente este SQL para publicar el sitio.
+
+ARCHIVOS/CARPETAS QUE DEBES CONSERVAR COMO YA ESTÁN EN GITHUB:
+- assets-vip-v90/
+- centro-control-v163.css
+- centro-control-v163.js
+- finanzas-clientes/
+- admin-finanzas-v93.html
+- supabase/ (sus migraciones anteriores)
+- vercel.json
+- .gitignore
+
+IMPORTANTE:
+- No reemplaces las carpetas anteriores con copias viejas.
+- No borres finanzas-clientes/, assets-vip-v90/ ni vercel.json.
+- No ejecutes otra vez las migraciones antiguas de Supabase.
+
+DESPUÉS DE SUBIR:
+1) Espera a que Vercel termine el despliegue automático.
+2) Abre https://club-vip-my.vercel.app/
+3) Haz una recarga fuerte (Ctrl+F5).
+4) Comprueba:
+   - entrada morada de MY;
+   - portada "Sistema VIP de Ventas Creativas y Empresariales";
+   - 21 DÍAS GRATIS / VIP / VIP PREMIUM;
+   - "Canjear código" continúa en PRÓXIMAMENTE mientras esté pausado;
+   - acceso de cuenta anterior / reactivación;
+   - Panel Admin;
+   - Contactos de suscriptores;
+   - Centro de Control.
+
+SEGURIDAD:
+La contraseña que apareció en una captura debe cambiarse. No guardes contraseñas,
+tokens ni claves secretas dentro de este repositorio.
