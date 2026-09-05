@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 196,
+  "source": "immutable-github-commit",
+  "repository": "Yulianamc1/club-vip-my",
+  "commit": "05e06bc00cb1c17925f94fa416d44e51d85ec1c2",
+  "note": "Static visual assets only. No executable/runtime dependency on prior indexes.",
+  "assets": [
+    {
+      "name": "anuncio-actualizacion-sistema.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/anuncio-actualizacion-sistema.webp"
+    },
+    {
+      "name": "anuncio-evento.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/anuncio-evento.webp"
+    },
+    {
+      "name": "anuncio-plantillas-temporada.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/anuncio-plantillas-temporada.webp"
+    },
+    {
+      "name": "anuncio-recurso-centro-vip.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/anuncio-recurso-centro-vip.webp"
+    },
+    {
+      "name": "destacado-buscador-ideas.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/destacado-buscador-ideas.webp"
+    },
+    {
+      "name": "destacado-impulso-360.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/destacado-impulso-360.webp"
+    },
+    {
+      "name": "destacado-vende-tu-producto.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/destacado-vende-tu-producto.webp"
+    },
+    {
+      "name": "herramienta-buscador-ideas.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-buscador-ideas.webp"
+    },
+    {
+      "name": "herramienta-calendario-temporadas.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-calendario-temporadas.webp"
+    },
+    {
+      "name": "herramienta-donde-vender.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-donde-vender.webp"
+    },
+    {
+      "name": "herramienta-generador-promociones.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-generador-promociones.webp"
+    },
+    {
+      "name": "herramienta-generador-textos.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-generador-textos.webp"
+    },
+    {
+      "name": "herramienta-guia-comenzar.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-guia-comenzar.webp"
+    },
+    {
+      "name": "herramienta-impulso-360.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-impulso-360.webp"
+    },
+    {
+      "name": "herramienta-precio-perfecto.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-precio-perfecto.webp"
+    },
+    {
+      "name": "herramienta-productos-complementarios.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-productos-complementarios.webp"
+    },
+    {
+      "name": "herramienta-recomendador-precios.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-recomendador-precios.webp"
+    },
+    {
+      "name": "herramienta-vende-tu-producto.webp",
+      "url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/assets-vip-v90/herramienta-vende-tu-producto.webp"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "pdf-lib.min.js",
+      "version": "1.17.1",
+      "source_commit": "05e06bc00cb1c17925f94fa416d44e51d85ec1c2",
+      "blob_sha": "edb12c72cdaa11b608eb5967cf1531892b7f3b31",
+      "primary_url": "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/finanzas-clientes/vendor/pdf-lib.min.js",
+      "fallback_url": "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"
+    }
+  ]
+}
