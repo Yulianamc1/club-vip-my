@@ -5,49 +5,123 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#76549d">
   <meta name="description" content="Finanzas privadas de la Plataforma VIP">
-  <title>Mis Finanzas · Plataforma VIP</title>
-  <link rel="stylesheet" href="./finanzas-clientes.css?v=165">
+  <meta name="my-finance-build" content="V196-2026-09-03-DIAMOND">
+  <title>Mis Finanzas · Ingresos, Egresos, Utilidad, Perfil Fiscal y Mi Meta</title>
+  <link rel="stylesheet" href="./finanzas-clientes.css?v=196">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.114.0/dist/umd/supabase.js" referrerpolicy="no-referrer"></script>
 </head>
 <body>
   <div id="financeApp" class="finance-loading" aria-live="polite">
     <div class="loading-card">
       <span class="loading-mark" aria-hidden="true">MY</span>
-      <h1>Preparando tus finanzas</h1>
-      <p>Estamos abriendo tu espacio privado en este dispositivo.</p>
+      <h1>Verificando tu acceso</h1>
+      <p>Antes de abrir tus datos privados, confirmamos tu identidad y membresía con MY.</p>
       <div class="loader" aria-hidden="true"></div>
     </div>
   </div>
   <script>
-    // La cuenta llega desde el index principal por sessionStorage. Esta llave
-    // solo contiene identidad de sesión; nunca contiene movimientos financieros.
-    let financeContext = null;
-    try {
-      financeContext = JSON.parse(sessionStorage.getItem("vip_finance_context_v1") || "null");
-    } catch (_) {}
-    const financeAllowed = Boolean(
-      financeContext && financeContext.userId && financeContext.financeAccess === true
-    );
-    window.MYVIP_FINANCE_CONTEXT = financeAllowed
-      ? { userId: financeContext.userId, displayName: financeContext.displayName || "Mi negocio", demo: false }
-      : {};
-    window.MYVIP_FINANCE_PLATFORM_URL = "../index.html";
-    if (!financeAllowed) {
-      document.getElementById("financeApp").innerHTML = `
-        <div class="loading-card">
-          <span class="loading-mark" aria-hidden="true">🔒</span>
-          <h1>Finanzas no está incluida en este acceso</h1>
-          <p>Regresa a la plataforma para consultar los planes que incluyen esta herramienta.</p>
-          <a class="button primary finance-return" href="../index.html">Volver a la plataforma</a>
-        </div>`;
+  (async function(){
+    'use strict';
+    const root=document.getElementById('financeApp');
+    const BRIDGE='vip_finance_context_v1';
+    const SB_URL='https://ncdppxdkxfduypvscexy.supabase.co';
+    const SB_KEY='sb_publishable_eDOs8qIBNohDID0Co6kK9w_Yaufm5yS';
+    const FINANCE_STORES=['settings','movements','catalog','meta'];
+    function clean(v){return String(v==null?'':v).replace(/\s+/g,' ').trim();}
+    function locked(title,text){
+      window.MYVIP_FINANCE_CONTEXT={};
+      root.innerHTML='<div class="loading-card"><span class="loading-mark" aria-hidden="true">🔒</span><h1>'+title+'</h1><p>'+text+'</p><a class="button primary finance-return" href="../index.html">Volver a la plataforma</a></div>';
     }
-  </script>
-  <script>
-    if (window.MYVIP_FINANCE_CONTEXT.userId) {
-      const module = document.createElement("script");
-      module.type = "module";
-      module.src = "./finanzas-clientes.js?v=165";
+    function fallbackHash(value){let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619);}return 'fallback-'+(h>>>0).toString(16).padStart(8,'0');}
+    async function storageFingerprint(userId){
+      const normalized=clean(userId);if(!normalized)throw new Error('MISSING_STORAGE_IDENTITY');
+      if(!globalThis.crypto||!crypto.subtle)return fallbackHash(normalized);
+      const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('myvip-finance-account:'+normalized));
+      return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    }
+    function makeStores(db){
+      if(!db.objectStoreNames.contains('settings'))db.createObjectStore('settings',{keyPath:'id'});
+      if(!db.objectStoreNames.contains('movements')){const st=db.createObjectStore('movements',{keyPath:'id'});st.createIndex('date','date',{unique:false});st.createIndex('type','type',{unique:false});st.createIndex('status','status',{unique:false});}
+      if(!db.objectStoreNames.contains('catalog')){const st=db.createObjectStore('catalog',{keyPath:'id'});st.createIndex('kind','kind',{unique:false});}
+      if(!db.objectStoreNames.contains('meta'))db.createObjectStore('meta',{keyPath:'id'});
+    }
+    function openStableDb(name){return new Promise((resolve,reject)=>{const req=indexedDB.open(name,1);req.onupgradeneeded=()=>makeStores(req.result);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('STORAGE_OPEN_ERROR'));req.onblocked=()=>reject(new Error('STORAGE_BLOCKED'));});}
+    function openExistingDb(name){return new Promise((resolve,reject)=>{let missing=false;const req=indexedDB.open(name,1);req.onupgradeneeded=()=>{missing=true;try{req.transaction.abort();}catch(_){}};req.onsuccess=()=>resolve(req.result);req.onerror=()=>{if(missing)resolve(null);else reject(req.error||new Error('STORAGE_OPEN_ERROR'));};req.onblocked=()=>reject(new Error('STORAGE_BLOCKED'));});}
+    function requestResult(req){return new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||new Error('STORAGE_ERROR'));});}
+    async function snapshotDb(db){
+      if(!FINANCE_STORES.every(n=>db.objectStoreNames.contains(n)))return null;
+      const tx=db.transaction(FINANCE_STORES,'readonly'),out={};
+      await Promise.all(FINANCE_STORES.map(async n=>{out[n]=await requestResult(tx.objectStore(n).getAll());}));
+      return out;
+    }
+    function snapshotHasData(x){return !!(x&&FINANCE_STORES.some(n=>Array.isArray(x[n])&&x[n].length));}
+    function snapshotFreshness(x){
+      let best=0,count=0;if(!x)return {best,count};
+      FINANCE_STORES.forEach(n=>(x[n]||[]).forEach(item=>{count++;const t=Date.parse(item&&((item.updatedAt)||(item.createdAt)||(item.closedAt)||(item.reopenedAt))||'');if(Number.isFinite(t))best=Math.max(best,t);}));
+      return {best,count};
+    }
+    function replaceDb(db,snapshot){return new Promise((resolve,reject)=>{const tx=db.transaction(FINANCE_STORES,'readwrite');tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error||new Error('STORAGE_ABORTED'));tx.onerror=()=>reject(tx.error||new Error('STORAGE_ERROR'));for(const n of FINANCE_STORES){const st=tx.objectStore(n);st.clear();for(const item of snapshot[n]||[])st.put(item);}});}
+    async function migrateLegacyFinanceStorage(userId,legacyDbKeys){
+      if(!globalThis.indexedDB)return {migrated:false,reason:'no-indexeddb'};
+      const stableFp=await storageFingerprint(userId),stableName='myvip_finance_client_v1_'+stableFp.slice(0,24),stable=await openStableDb(stableName);
+      try{
+        const current=await snapshotDb(stable);if(snapshotHasData(current))return {migrated:false,reason:'stable-has-data'};
+        const candidates=[];
+        for(const key of legacyDbKeys){
+          if(!/^[0-9a-f]{24}$/.test(String(key||'')))continue;
+          const name='myvip_finance_client_v1_'+key;if(name===stableName)continue;let db=null;
+          try{db=await openExistingDb(name);if(!db)continue;const snap=await snapshotDb(db);if(snapshotHasData(snap))candidates.push({name,snapshot:snap,...snapshotFreshness(snap)});}finally{try{db&&db.close();}catch(_){}}
+        }
+        if(!candidates.length)return {migrated:false,reason:'no-legacy-data'};
+        candidates.sort((a,b)=>(b.best-a.best)||(b.count-a.count)||a.name.localeCompare(b.name));
+        await replaceDb(stable,candidates[0].snapshot);return {migrated:true,source:candidates[0].name};
+      }finally{try{stable.close();}catch(_){}}
+    }
+
+    let bridge=null;try{bridge=JSON.parse(sessionStorage.getItem(BRIDGE)||'null');}catch(_){}
+    const code=clean(bridge&&bridge.codigo).toUpperCase(),whatsapp=clean(bridge&&bridge.whatsapp);
+    try{
+      if(!(window.supabase&&typeof window.supabase.createClient==='function'))throw new Error('SUPABASE_LIBRARY_UNAVAILABLE');
+      const financeSb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+      const sessionResult=await financeSb.auth.getSession();
+      const authenticated=!!(sessionResult&&sessionResult.data&&sessionResult.data.session&&sessionResult.data.session.access_token);
+      if(!authenticated&&(!code||!whatsapp)){
+        locked('Inicia sesión para abrir Finanzas','Por seguridad, abre esta sección desde tu cuenta dentro de MY.');return;
+      }
+      const result=await financeSb.rpc('vip_finanzas_acceso',{p_codigo:code||'',p_whatsapp:whatsapp||''});
+      if(result&&result.error)throw result.error;
+      const access=result&&result.data;
+      if(!(access&&access.ok===true&&access.allowed===true)){
+        locked('Finanzas no está incluida en este acceso','Tu identidad fue verificada, pero esta herramienta no está habilitada para tu acceso actual.');return;
+      }
+      const storageIdentity=clean(access.storage_identity);
+      const legacyDbKeys=Array.isArray(access.legacy_db_keys)?access.legacy_db_keys.filter(x=>/^[0-9a-f]{24}$/.test(String(x||''))):[];
+      if(!storageIdentity)throw new Error('MISSING_STORAGE_IDENTITY');
+      const stableUserId='vip-finance:'+storageIdentity;
+      await migrateLegacyFinanceStorage(stableUserId,legacyDbKeys);
+      window.MYVIP_FINANCE_CONTEXT={
+        userId:stableUserId,
+        legacyDbKeys,
+        displayName:clean(bridge&&bridge.displayName)||'Mi negocio',
+        codigo:code,
+        whatsapp,
+        authenticated,
+        financeAccess:true,
+        financeLevel:clean(access.level)||'none',
+        financeModules:access.modules&&typeof access.modules==='object'?access.modules:{},
+        verifiedAt:Date.now(),
+        demo:false
+      };
+      window.MYVIP_FINANCE_PLATFORM_URL='../index.html';
+      window.MYVIP_FINANCE_SYNC_CONFIG={url:SB_URL,key:SB_KEY,client:financeSb};
+      const module=document.createElement('script');
+      module.type='module';module.src='./finanzas-clientes.js?v=196';
+      module.onerror=()=>locked('No pudimos abrir Finanzas','Los archivos de la herramienta no terminaron de cargar. Regresa a MY e inténtalo nuevamente.');
       document.body.appendChild(module);
+    }catch(_){
+      locked('No pudimos verificar tu acceso','Por seguridad no abrimos tus datos financieros sin confirmar tu identidad y membresía. Revisa tu conexión e inténtalo nuevamente.');
     }
+  })();
   </script>
 </body>
 </html>

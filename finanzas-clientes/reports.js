@@ -113,7 +113,7 @@ function reportHtml(report) {
   ${report.ranking.length ? report.ranking.map((item, index) => `<div class="rank"><b>${index + 1}. ${escapeHtml(item.name)}</b> ${escapeHtml(currency(item.profit, code))}</div>`).join("") : "<p>No hay ventas cobradas en este periodo.</p>"}
   <h2>Detalle de movimientos</h2>
   <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoría</th><th>Cliente/Proveedor</th><th>Estado</th><th>Total</th></tr></thead><tbody>${reportTableRows(report) || '<tr><td colspan="7">No hay movimientos en este periodo.</td></tr>'}</tbody></table>
-  <div class="privacy">Documento generado en el dispositivo de la usuaria. La información financiera no fue enviada a MY ni almacenada en Supabase.</div>
+  <div class="privacy">Documento generado en el dispositivo de la usuaria. Los datos financieros pertenecen a su identidad privada MY y pueden sincronizarse de forma segura para continuidad entre dispositivos; no son visibles para otras integrantes.</div>
   </body></html>`;
 }
 
@@ -148,12 +148,20 @@ let pdfLibPromise;
 function loadPdfLib() {
   if (globalThis.PDFLib) return Promise.resolve(globalThis.PDFLib);
   if (pdfLibPromise) return pdfLibPromise;
+  const sources = [
+    "https://raw.githubusercontent.com/Yulianamc1/club-vip-my/05e06bc00cb1c17925f94fa416d44e51d85ec1c2/finanzas-clientes/vendor/pdf-lib.min.js",
+    "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js",
+  ];
   pdfLibPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = new URL("vendor/pdf-lib.min.js", MODULE_BASE).href;
-    script.onload = () => globalThis.PDFLib ? resolve(globalThis.PDFLib) : reject(new Error("PDF_LIBRARY_ERROR"));
-    script.onerror = () => reject(new Error("PDF_LIBRARY_ERROR"));
-    document.head.append(script);
+    const trySource = (index) => {
+      if (index >= sources.length) return reject(new Error("PDF_LIBRARY_ERROR"));
+      const script = document.createElement("script");
+      script.src = sources[index];
+      script.onload = () => globalThis.PDFLib ? resolve(globalThis.PDFLib) : trySource(index + 1);
+      script.onerror = () => trySource(index + 1);
+      document.head.appendChild(script);
+    };
+    trySource(0);
   });
   return pdfLibPromise;
 }

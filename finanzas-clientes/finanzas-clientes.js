@@ -13,44 +13,132 @@ import {
   taxProfileForDate,
 } from "./tax.js";
 import { buildReport, exportPdf, exportWord } from "./reports.js";
+import { solveGoal } from "./goal-engine.js";
 
 let context = globalThis.MYVIP_FINANCE_CONTEXT || {};
 const root = document.getElementById("financeApp");
 const THEMES = [
-  { id: "purple", name: "Morado pastel", accent: "#76549d", accent2: "#b197c5", soft: "#eee6f4", softer: "#faf7fb", ink: "#453056" },
-  { id: "beige", name: "Beige", accent: "#875c3d", accent2: "#b99272", soft: "#f3e8dc", softer: "#fcf8f2", ink: "#533824" },
+  { id: "purple", name: "Morado", accent: "#6d3bd1", accent2: "#9b6ee8", soft: "#f0eafd", softer: "#faf8ff", ink: "#3c1d76" },
   { id: "pink", name: "Rosa", accent: "#c43f83", accent2: "#ec75ad", soft: "#fde9f3", softer: "#fff8fb", ink: "#74224d" },
   { id: "blue", name: "Azul", accent: "#286bc7", accent2: "#68a1ea", soft: "#e9f3ff", softer: "#f8fbff", ink: "#17437d" },
   { id: "green", name: "Verde", accent: "#1d7d63", accent2: "#59aa91", soft: "#e7f6f1", softer: "#f7fcfa", ink: "#124f40" },
   { id: "terracotta", name: "Terracota", accent: "#b6563f", accent2: "#da8a72", soft: "#faece7", softer: "#fff9f7", ink: "#713528" },
   { id: "neutral", name: "Neutro", accent: "#58536c", accent2: "#88829e", soft: "#efedf4", softer: "#faf9fc", ink: "#363244" },
 ];
-const BACKGROUNDS = [
-  { id: "beige", name: "Beige suave", base: "#f3eee6", warm: "#fbf7f0", header: "#eadfd3", header2: "#f8f1e8", panel: "#f6ede3", panel2: "#fbf6ef", line: "#e0d6cc" },
-  { id: "lavender", name: "Morado pastel", base: "#f1edf5", warm: "#faf7fb", header: "#e7deef", header2: "#f6f1f8", panel: "#eee6f3", panel2: "#faf6fb", line: "#ddd4e5" },
-  { id: "blush", name: "Rosa pastel", base: "#f7eef2", warm: "#fcf7f8", header: "#f0dfe6", header2: "#faf1f4", panel: "#f5e7ec", panel2: "#fcf5f7", line: "#e8d5dd" },
-  { id: "sage", name: "Verde suave", base: "#edf3ef", warm: "#f8faf8", header: "#dce9e1", header2: "#f1f7f3", panel: "#e5efe9", panel2: "#f6faf7", line: "#d3e0d8" },
-  { id: "mist", name: "Azul nube", base: "#edf2f7", warm: "#f7f9fb", header: "#dce7f0", header2: "#f1f5f9", panel: "#e5edf4", panel2: "#f6f9fb", line: "#d3dee8" },
-  { id: "ivory", name: "Marfil", base: "#f7f3eb", warm: "#fdfaf4", header: "#eee6d8", header2: "#faf6ee", panel: "#f5eddf", panel2: "#fcf8f1", line: "#e4dccf" },
-];
 const NAV_ITEMS = [
   ["summary", "Inicio"],
-  ["income", "Ingresos"],
-  ["services", "Trabajos y servicios"],
-  ["expenses", "Gastos"],
-  ["invoices", "Facturas"],
-  ["taxes", "SAT y régimen"],
-  ["closing", "Cierre mensual"],
+  ["movements", "Movimientos"],
+  ["catalog", "Productos y servicios"],
+  ["pending", "Por cobrar"],
+  ["taxes", "Perfil Fiscal / SAT"],
+  ["goals", "🎯 Mi Meta"],
+  ["reports", "Reportes"],
 ];
 const SALE_CATEGORIES = ["Producto", "Servicio", "Producto digital", "Cita", "Pedido personalizado", "Suscripción", "Curso o clase", "Otro ingreso"];
 const EXPENSE_CATEGORIES = ["Materiales", "Publicidad", "Envíos", "Comisiones", "Renta y servicios", "Equipo o mantenimiento", "Plataformas", "Honorarios", "Impuestos", "Otro gasto"];
 const PAYMENT_METHODS = ["Transferencia", "Efectivo", "Tarjeta", "Depósito", "Mercado Pago", "PayPal", "Plataforma digital", "Otro"];
-const SERVICE_CATEGORIES = new Set(["Servicio", "Cita", "Pedido personalizado", "Curso o clase"]);
+
+
+const MYBUSINESS_QUEUE_KEY = "vip_my_business_finance_queue";
+const LEGACY_MYBUSINESS_QUEUE_KEYS = ["vip_my_business_finance_queue_v167"]
+const MYGOAL_ROUTE_QUEUE_KEY = "vip_my_goal_route_queue";
+const LEGACY_MYGOAL_ROUTE_QUEUE_KEYS = ["vip_my_goal_route_queue_v195"];
+const GOAL_PREFIX = "finance_goal:";
+
+async function syncFromMyBusiness() {
+  let queue = [], sourceKey = MYBUSINESS_QUEUE_KEY;
+  try {
+    let raw = localStorage.getItem(MYBUSINESS_QUEUE_KEY);
+    if (!raw) {
+      for (const key of LEGACY_MYBUSINESS_QUEUE_KEYS) {
+        raw = localStorage.getItem(key);
+        if (raw) { sourceKey = key; break; }
+      }
+    }
+    queue = JSON.parse(raw || "[]");
+    if (!Array.isArray(queue)) queue = [];
+    if (sourceKey !== MYBUSINESS_QUEUE_KEY && queue.length) {
+      localStorage.setItem(MYBUSINESS_QUEUE_KEY, JSON.stringify(queue));
+      try { localStorage.removeItem(sourceKey); } catch {}
+    }
+  } catch { queue = []; }
+  const legacyMemberId = context.codigo ? `vip-member:${String(context.codigo).trim().toUpperCase()}` : "";
+  const mine = queue.filter((event) => event?.userId === context.userId || (legacyMemberId && event?.userId === legacyMemberId));
+  if (!mine.length) return 0;
+  const processed = new Set();
+  for (const event of mine) {
+    try {
+      const data = event.data || {};
+      if (event.type === "upsert_product" && data.id && data.name) {
+        const id = `mybiz_prod_${data.id}`;
+        const existing = await store.get("catalog", id);
+        await store.put("catalog", {
+          ...(existing || {}),
+          id,
+          kind: data.kind === "service" ? "service" : "product",
+          name: data.name,
+          category: data.category || existing?.category || "Mi Negocio MY",
+          price: number(data.price),
+          cost: number(data.cost),
+          createdAt: existing?.createdAt || data.updatedAt || nowIso(),
+          updatedAt: data.updatedAt || nowIso(),
+          source: "my_business",
+          sourceId: data.id,
+        });
+      }
+      if (event.type === "upsert_order" && data.id) {
+        const id = `mybiz_order_${data.id}`;
+        const existing = await store.get("movements", id);
+        const date = data.date || today();
+        const profile = taxProfileForDate(settings, date);
+        const payments = Array.isArray(data.payments) ? data.payments.map((p, i) => ({
+          id: p.id || `${id}_pay_${i + 1}`,
+          date: p.date || date,
+          amount: number(p.amount),
+          method: p.method || "Otro",
+          createdAt: p.createdAt || data.updatedAt || nowIso(),
+        })) : [];
+        const names = Array.isArray(data.items) ? data.items.map((x) => x.concept).filter(Boolean) : [];
+        await store.put("movements", {
+          id,
+          type: "income",
+          date,
+          concept: `Pedido ${data.number || "MY"}${names.length ? ` · ${names.slice(0, 3).join(", ")}` : ""}`,
+          category: "Pedido personalizado",
+          party: data.clientName || "",
+          amount: number(data.total),
+          paidAmount: number(data.paid),
+          costAmount: number(data.cost),
+          paymentMethod: payments.at(-1)?.method || existing?.paymentMethod || "Otro",
+          catalogId: "",
+          catalogName: "",
+          notes: `Sincronizado desde Mi Negocio MY. Estado: ${data.status || "pending"}.${data.delivery ? ` Entrega: ${data.delivery}.` : ""}`,
+          payments,
+          taxProfile: existing?.taxProfile || profile,
+          tax: existing?.tax || { includesVat:false, vatRate:0, vatBase:0, vatAmount:0, invoiceStatus:"none", withheldIsr:0, withheldVat:0 },
+          createdAt: existing?.createdAt || data.updatedAt || nowIso(),
+          updatedAt: data.updatedAt || nowIso(),
+          source: "my_business",
+          sourceId: data.id,
+        });
+      }
+      processed.add(event.id);
+    } catch (error) {
+      console.warn("[MY] Evento de Mi Negocio no sincronizado", error);
+    }
+  }
+  if (processed.size) {
+    const remaining = queue.filter((event) => !processed.has(event.id));
+    try { localStorage.setItem(MYBUSINESS_QUEUE_KEY, JSON.stringify(remaining)); } catch {}
+  }
+  return processed.size;
+}
 
 let store;
 let settings;
 let movements = [];
 let catalog = [];
+let goals = [];
 let selectedRestore;
 const state = {
   tab: "summary",
@@ -174,33 +262,7 @@ function applyTheme(theme = settings) {
   style.setProperty("--accent-soft", theme?.accentSoft || preset.soft);
   style.setProperty("--accent-softer", theme?.accentSofter || preset.softer);
   style.setProperty("--accent-ink", theme?.accentInk || preset.ink);
-  style.setProperty("--accent-contrast", readableAccentText(customAccent));
-  applyBackground(theme);
-}
-
-function applyBackground(theme = settings) {
-  const preset = BACKGROUNDS.find((item) => item.id === theme?.backgroundId) || BACKGROUNDS[0];
-  const style = document.documentElement.style;
-  const base = theme?.backgroundColor || preset.base;
-  style.setProperty("--bg", base);
-  style.setProperty("--warm-bg", theme?.backgroundWarm || preset.warm);
-  style.setProperty("--header-wash", theme?.backgroundHeader || preset.header);
-  style.setProperty("--header-wash-2", theme?.backgroundHeader2 || preset.header2);
-  style.setProperty("--panel-wash", theme?.backgroundPanel || preset.panel);
-  style.setProperty("--panel-wash-2", theme?.backgroundPanel2 || preset.panel2);
-  style.setProperty("--line", theme?.backgroundLine || preset.line);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme?.backgroundHeader || preset.header);
-}
-
-function readableAccentText(hex) {
-  const value = String(hex || "").replace("#", "");
-  if (!/^[0-9a-f]{6}$/i.test(value)) return "#ffffff";
-  const [r, g, b] = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16) / 255);
-  const linear = [r, g, b].map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
-  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-  const whiteContrast = 1.05 / (luminance + 0.05);
-  const darkContrast = (luminance + 0.05) / 0.067;
-  return whiteContrast >= darkContrast ? "#ffffff" : "#2d2432";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", customAccent);
 }
 
 function toast(message, type = "default") {
@@ -235,44 +297,17 @@ function currentProfile() {
   return taxProfileForDate(settings, today());
 }
 
-function monthClosure(month = state.month) {
-  return settings?.monthClosures?.[month] || { status: "open" };
-}
-
-function monthIsClosed(month = state.month) {
-  return monthClosure(month).status === "closed";
-}
-
-function movementMonth(item) {
-  return String(item?.date || "").slice(0, 7);
-}
-
-function belongsToSelectedMonth(item) {
-  return movementMonth(item) === state.month && !item.deletedAt;
-}
-
-function isServiceMovement(item) {
-  if (item?.type !== "income") return false;
-  const saved = catalog.find((entry) => entry.id === item.catalogId);
-  return saved?.kind === "service" || SERVICE_CATEGORIES.has(item.category);
-}
-
-function invoiceStatusLabel(item) {
-  const status = item?.tax?.invoiceStatus || "none";
-  if (status === "pending") return "Pendiente";
-  if (status === "global") return "Factura global";
-  if (status === "issued") return item.type === "income" ? "Emitida" : "Recibida";
-  if (status === "received") return "Recibida";
-  return "Sin factura / no aplica";
-}
-
 async function loadData() {
-  [movements, catalog] = await Promise.all([
+  let meta = [];
+  [movements, catalog, meta] = await Promise.all([
     store.getAll("movements"),
     store.getAll("catalog"),
+    store.getAll("meta"),
   ]);
   movements.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt)));
   catalog.sort((a, b) => String(a.name).localeCompare(String(b.name), "es"));
+  goals = meta.filter((item) => item?.kind === "finance_goal" && String(item.id || "").startsWith(GOAL_PREFIX) && !item.deletedAt)
+    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
 }
 
 async function saveSettings(next) {
@@ -291,10 +326,8 @@ function shellHtml() {
         </div>
         <div class="top-actions">
           ${context.demo ? '<span class="demo-pill">Vista demostración</span>' : ""}
-          <span class="privacy-pill"><span aria-hidden="true">●</span> Solo en este dispositivo</span>
-          <button class="button outline" data-action="back-platform"><span class="button-icon" aria-hidden="true">←</span><span>Plataforma</span></button>
+          <span class="privacy-pill"><span aria-hidden="true">●</span> Privado por cuenta</span>
           <button class="button outline" data-action="theme"><span class="button-icon" aria-hidden="true">●</span><span>Color</span></button>
-          <button class="button outline" data-action="background"><span class="button-icon" aria-hidden="true">▰</span><span>Fondo</span></button>
           <button class="button primary" data-action="backup"><span class="button-icon" aria-hidden="true">↓</span><span>Respaldo</span></button>
         </div>
       </div>
@@ -303,7 +336,7 @@ function shellHtml() {
     <main class="finance-main">
       <section class="privacy-banner ${shouldWarnBackup() ? "needs-backup" : ""}">
         <span class="banner-icon" aria-hidden="true">${shouldWarnBackup() ? "!" : "✓"}</span>
-        <div><h2>${shouldWarnBackup() ? "Protege tu información con un respaldo" : "Tus datos permanecen privados"}</h2><p>Se guardan automáticamente en este dispositivo. Para usarlos en otro celular, tablet o computadora, descarga tu respaldo y restáuralo allá. <b>${escapeHtml(backupAgeText())}.</b></p></div>
+        <div><h2>${shouldWarnBackup() ? "Protege tu información con un respaldo" : "Tus datos permanecen privados"}</h2><p>Se guardan en tu espacio privado y se sincronizan de forma segura cuando hay conexión. El respaldo descargable sigue disponible como protección adicional. <b>${escapeHtml(backupAgeText())}.</b></p></div>
         <div class="banner-actions"><button class="button soft small" data-action="restore">Restaurar mis datos</button><button class="button primary small" data-action="download-backup">Descargar respaldo</button></div>
       </section>
       <div id="financeContent"></div>
@@ -352,39 +385,38 @@ function renderSummary() {
   const maximum = Math.max(1, ...trend.flatMap((item) => [item.income, item.expense]));
   const ranking = topRanking(from, to);
   const recent = movements.filter((item) => !item.deletedAt).slice(0, 6);
-  return `${heading("Tu negocio en números", `Resumen de ${monthName(state.month)}`, "Lo esencial para saber cuánto vendiste, gastaste y ganaste.", `<div class="field"><label for="monthPicker">Cambiar mes</label><input id="monthPicker" data-change="month" type="month" value="${state.month}"></div>`)}
+  return `${heading("Tu negocio en números", `Resumen de ${monthName(state.month)}`, "Lo esencial para saber cuánto vendiste, cuánto egresó y cuál fue tu utilidad.", `<div class="field"><label for="monthPicker">Cambiar mes</label><input id="monthPicker" data-change="month" type="month" value="${state.month}"></div>`)}
     <section class="grid metrics-grid">
       ${metric("$", "Cobrado", money(summary.income), "Dinero realmente recibido", "positive")}
-      ${metric("−", "Gastos", money(summary.expenses), "Pagos del negocio", "negative")}
+      ${metric("−", "Egresos", money(summary.expenses), "Pagos del negocio", "negative")}
       ${metric("↘", "Costos de venta", money(summary.cost), "Costo de lo vendido", "negative")}
-      ${metric("=", "Ganancia estimada", money(summary.profit), "Cobrado menos gastos y costos", summary.profit >= 0 ? "positive" : "negative")}
+      ${metric("=", "Utilidad estimada", money(summary.profit), "Cobrado menos egresos y costos", summary.profit >= 0 ? "positive" : "negative")}
       ${metric("!", "Por cobrar", money(summary.pending), "Pendiente acumulado", summary.pending > 0 ? "warning" : "")}
     </section>
-    ${monthIsClosed() ? `<section class="closed-month-banner"><div><b>Este mes está cerrado</b><span>Puedes consultar y descargar sus resultados. Reábrelo desde Cierre mensual si necesitas corregir algo.</span></div><button class="button soft" data-tab="closing">Ver cierre</button></section>` : ""}
-    <section class="quick-panel"><div class="quick-panel-head"><div><p class="quick-eyebrow">REGISTRA AQUÍ</p><h3>Ingresa lo que entra y sale de tu negocio</h3><p>Cada registro actualiza automáticamente tus ingresos, gastos, ganancias, pendientes, facturas, SAT y reporte mensual.</p></div><button class="button quick-example-button" data-action="show-registration-example">Ver un ejemplo</button></div><div class="quick-grid">
-      <button class="quick-action" data-action="new-income"><span aria-hidden="true">＋</span><b>Registrar ingreso o venta</b><small>Dinero recibido o pendiente por un producto.</small></button>
-      <button class="quick-action" data-action="new-service"><span aria-hidden="true">◇</span><b>Registrar trabajo o servicio</b><small>Trabajo realizado, cita, anticipo o saldo.</small></button>
-      <button class="quick-action" data-action="new-expense"><span aria-hidden="true">−</span><b>Registrar gasto</b><small>Materiales, publicidad, comisiones u otra salida.</small></button>
-      <button class="quick-action" data-tab="invoices"><span aria-hidden="true">▤</span><b>Revisar facturas</b><small>Comprobantes propios pendientes, emitidos o recibidos.</small></button>
+    <section class="quick-panel"><h3>¿Qué necesitas registrar?</h3><p>Elige una acción y guarda el movimiento en pocos pasos.</p><div class="quick-grid">
+      <button class="quick-action" data-action="new-income"><span aria-hidden="true">＋</span><b>Registrar venta</b></button>
+      <button class="quick-action" data-action="new-expense"><span aria-hidden="true">−</span><b>Registrar egreso</b></button>
+      <button class="quick-action" data-action="new-catalog"><span aria-hidden="true">◇</span><b>Agregar producto o servicio</b></button>
+      <button class="quick-action" data-tab="pending"><span aria-hidden="true">!</span><b>Ver pagos pendientes</b></button>
     </div></section>
     <div style="height:14px"></div>
     <section class="grid two-grid">
-      <article class="card chart-card"><div class="section-title"><div><h3>Ingresos y salidas</h3><p>Comparación de los últimos seis meses</p></div><div class="chart-legend"><span><i class="legend-dot"></i>Cobrado</span><span><i class="legend-dot expense"></i>Gastos + costos</span></div></div><div class="bar-chart" role="img" aria-label="Comparación mensual de ingresos y gastos">${trend.map((item) => `<div class="bar-group"><div class="bar-stack"><span class="bar income" style="height:${Math.max(2, item.income / maximum * 100)}%" title="Cobrado ${money(item.income)}"></span><span class="bar expense" style="height:${Math.max(2, item.expense / maximum * 100)}%" title="Salidas ${money(item.expense)}"></span></div><span class="bar-label">${new Intl.DateTimeFormat("es-MX", { month: "short" }).format(new Date(`${item.month}-15T12:00:00`))}</span></div>`).join("")}</div></article>
-      <article class="card"><div class="section-title"><div><h3>Lo más rentable</h3><p>Ganancia estimada del mes</p></div></div>${ranking.length ? `<div class="rank-list">${ranking.map((item) => `<div class="rank-row"><span class="rank-name">${escapeHtml(item.name)}</span><span class="rank-track"><span class="rank-fill" style="width:${Math.max(3, item.profit / Math.max(1, ranking[0].profit) * 100)}%"></span></span><span class="rank-value">${money(item.profit)}</span></div>`).join("")}</div>` : emptyState("Aún no hay ventas cobradas", "Cuando registres una venta, aquí verás qué te deja mayor ganancia.")}</article>
+      <article class="card chart-card"><div class="section-title"><div><h3>Ingresos y salidas</h3><p>Comparación de los últimos seis meses</p></div><div class="chart-legend"><span><i class="legend-dot"></i>Cobrado</span><span><i class="legend-dot expense"></i>Egresos + costos</span></div></div><div class="bar-chart" role="img" aria-label="Comparación mensual de ingresos y gastos">${trend.map((item) => `<div class="bar-group"><div class="bar-stack"><span class="bar income" style="height:${Math.max(2, item.income / maximum * 100)}%" title="Cobrado ${money(item.income)}"></span><span class="bar expense" style="height:${Math.max(2, item.expense / maximum * 100)}%" title="Salidas ${money(item.expense)}"></span></div><span class="bar-label">${new Intl.DateTimeFormat("es-MX", { month: "short" }).format(new Date(`${item.month}-15T12:00:00`))}</span></div>`).join("")}</div></article>
+      <article class="card"><div class="section-title"><div><h3>Lo más rentable</h3><p>Utilidad estimada del mes</p></div></div>${ranking.length ? `<div class="rank-list">${ranking.map((item) => `<div class="rank-row"><span class="rank-name">${escapeHtml(item.name)}</span><span class="rank-track"><span class="rank-fill" style="width:${Math.max(3, item.profit / Math.max(1, ranking[0].profit) * 100)}%"></span></span><span class="rank-value">${money(item.profit)}</span></div>`).join("")}</div>` : emptyState("Aún no hay ventas cobradas", "Cuando registres una venta, aquí verás qué te deja mayor utilidad.")}</article>
     </section>
     <div style="height:14px"></div>
-    <section class="card table-card"><div style="padding:18px 18px 0" class="section-title"><div><h3>Movimientos recientes</h3><p>Lo último que registraste</p></div><button class="button small outline" data-tab="income">Ver ingresos</button></div>${recent.length ? recordsTable(recent) : `<div style="padding:0 18px 18px">${emptyState("Tu historial está vacío", "Registra tu primera venta o gasto para comenzar.", "new-income", "Registrar mi primera venta")}</div>`}</section>`;
+    <section class="card table-card"><div style="padding:18px 18px 0" class="section-title"><div><h3>Movimientos recientes</h3><p>Lo último que registraste</p></div><button class="button small outline" data-tab="movements">Ver todos</button></div>${recent.length ? recordsTable(recent) : `<div style="padding:0 18px 18px">${emptyState("Tu historial está vacío", "Registra tu primera venta o egreso para comenzar.", "new-income", "Registrar mi primera venta")}</div>`}</section>`;
 }
 
 function recordRow(item) {
   const status = statusFor(item);
   const value = item.type === "income" ? item.amount : item.amount;
-  return `<tr><td>${escapeHtml(readableDate(item.date))}</td><td><span class="status ${item.type === "income" ? "paid" : "pending"}">${item.type === "income" ? "Venta" : "Gasto"}</span></td><td><b>${escapeHtml(item.concept)}</b><br><small>${escapeHtml(item.category || "Sin categoría")}</small></td><td>${escapeHtml(item.party || "—")}</td><td><span class="status ${status}">${statusLabel(status)}</span></td><td class="amount ${item.type}">${item.type === "income" ? "+" : "−"}${money(value)}</td><td><div class="row-actions">${item.type === "income" && status !== "paid" ? `<button class="button small soft" data-action="add-payment" data-id="${item.id}">Cobrar</button>` : ""}<button class="button small outline" data-action="edit-movement" data-id="${item.id}">Editar</button></div></td></tr>`;
+  return `<tr><td>${escapeHtml(readableDate(item.date))}</td><td><span class="status ${item.type === "income" ? "paid" : "pending"}">${item.type === "income" ? "Venta" : "Egreso"}</span></td><td><b>${escapeHtml(item.concept)}</b><br><small>${escapeHtml(item.category || "Sin categoría")}</small></td><td>${escapeHtml(item.party || "—")}</td><td><span class="status ${status}">${statusLabel(status)}</span></td><td class="amount ${item.type}">${item.type === "income" ? "+" : "−"}${money(value)}</td><td><div class="row-actions">${item.type === "income" && status !== "paid" ? `<button class="button small soft" data-action="add-payment" data-id="${item.id}">Cobrar</button>` : ""}<button class="button small outline" data-action="edit-movement" data-id="${item.id}">Editar</button></div></td></tr>`;
 }
 
 function mobileRecord(item) {
   const status = statusFor(item);
-  return `<article class="mobile-record"><div class="mobile-record-top"><div><h3>${escapeHtml(item.concept)}</h3><p>${item.type === "income" ? "Venta" : "Gasto"} · ${escapeHtml(readableDate(item.date))}</p></div><b class="amount ${item.type}">${item.type === "income" ? "+" : "−"}${money(item.amount)}</b></div><div class="mobile-record-bottom"><span class="status ${status}">${statusLabel(status)}</span><div class="row-actions">${item.type === "income" && status !== "paid" ? `<button class="button small soft" data-action="add-payment" data-id="${item.id}">Cobrar</button>` : ""}<button class="button small outline" data-action="edit-movement" data-id="${item.id}">Editar</button></div></div></article>`;
+  return `<article class="mobile-record"><div class="mobile-record-top"><div><h3>${escapeHtml(item.concept)}</h3><p>${item.type === "income" ? "Venta" : "Egreso"} · ${escapeHtml(readableDate(item.date))}</p></div><b class="amount ${item.type}">${item.type === "income" ? "+" : "−"}${money(item.amount)}</b></div><div class="mobile-record-bottom"><span class="status ${status}">${statusLabel(status)}</span><div class="row-actions">${item.type === "income" && status !== "paid" ? `<button class="button small soft" data-action="add-payment" data-id="${item.id}">Cobrar</button>` : ""}<button class="button small outline" data-action="edit-movement" data-id="${item.id}">Editar</button></div></div></article>`;
 }
 
 function recordsTable(items) {
@@ -404,52 +436,9 @@ function filteredMovements() {
 
 function renderMovements() {
   const items = filteredMovements();
-  return `${heading("Historial organizado", "Ventas y gastos", "Busca, filtra o corrige cualquier registro.", `<button class="button success" data-action="new-income">＋ Venta</button><button class="button danger" data-action="new-expense">− Gasto</button>`)}
-    <section class="toolbar"><div class="field search-field"><label for="movementSearch">Buscar</label><input id="movementSearch" data-input="movement-search" value="${escapeHtml(state.movementSearch)}" placeholder="Producto, cliente, proveedor…"></div><div class="field"><label for="movementType">Tipo</label><select id="movementType" data-change="movement-type"><option value="all">Todos</option><option value="income" ${state.movementType === "income" ? "selected" : ""}>Ventas</option><option value="expense" ${state.movementType === "expense" ? "selected" : ""}>Gastos</option></select></div><div class="field"><label for="movementStatus">Estado</label><select id="movementStatus" data-change="movement-status"><option value="all">Todos</option><option value="paid" ${state.movementStatus === "paid" ? "selected" : ""}>Pagados</option><option value="partial" ${state.movementStatus === "partial" ? "selected" : ""}>Parciales</option><option value="pending" ${state.movementStatus === "pending" ? "selected" : ""}>Pendientes</option></select></div><button class="button outline" data-action="clear-filters">Limpiar</button></section>
+  return `${heading("Historial organizado", "Ingresos y egresos", "Busca, filtra o corrige cualquier registro.", `<button class="button success" data-action="new-income">＋ Venta</button><button class="button danger" data-action="new-expense">− Egreso</button>`)}
+    <section class="toolbar"><div class="field search-field"><label for="movementSearch">Buscar</label><input id="movementSearch" data-input="movement-search" value="${escapeHtml(state.movementSearch)}" placeholder="Producto, cliente, proveedor…"></div><div class="field"><label for="movementType">Tipo</label><select id="movementType" data-change="movement-type"><option value="all">Todos</option><option value="income" ${state.movementType === "income" ? "selected" : ""}>Ventas</option><option value="expense" ${state.movementType === "expense" ? "selected" : ""}>Egresos</option></select></div><div class="field"><label for="movementStatus">Estado</label><select id="movementStatus" data-change="movement-status"><option value="all">Todos</option><option value="paid" ${state.movementStatus === "paid" ? "selected" : ""}>Pagados</option><option value="partial" ${state.movementStatus === "partial" ? "selected" : ""}>Parciales</option><option value="pending" ${state.movementStatus === "pending" ? "selected" : ""}>Pendientes</option></select></div><button class="button outline" data-action="clear-filters">Limpiar</button></section>
     <section class="card table-card">${items.length ? recordsTable(items) : `<div style="padding:18px">${emptyState("No encontramos movimientos", "Prueba con otros filtros o registra un nuevo movimiento.", "new-income", "Registrar venta")}</div>`}</section>`;
-}
-
-function monthRecordSection(items, emptyTitle, emptyText, action, actionLabel) {
-  return `<section class="card table-card">${items.length ? recordsTable(items) : `<div style="padding:18px">${emptyState(emptyTitle, emptyText, action, actionLabel)}</div>`}</section>`;
-}
-
-function renderIncome() {
-  const items = movements.filter((item) => belongsToSelectedMonth(item) && item.type === "income" && !isServiceMovement(item));
-  const pending = items.reduce((sum, item) => sum + Math.max(0, number(item.amount) - number(item.paidAmount)), 0);
-  const collected = items.reduce((sum, item) => sum + number(item.paidAmount), 0);
-  return `${heading("Tus propias ventas", "Ingresos y ventas", "Registra aquí las ventas de tus productos físicos o digitales. Nada de esta sección pertenece a MY.", `<button class="button outline" data-action="show-registration-example">Ver ejemplo</button><button class="button success" data-action="new-income">＋ Registrar ingreso</button>`)}
-    <section class="grid metrics-grid">${metric("$", "Cobrado", money(collected), "Dinero recibido en estas ventas", "positive")}${metric("!", "Por cobrar", money(pending), "Saldo pendiente de tus clientes", pending ? "warning" : "")}</section><div style="height:14px"></div>
-    ${monthRecordSection(items, "Aún no registras ingresos este mes", "Agrega una venta de tu propio producto para comenzar.", "new-income", "Registrar ingreso")}`;
-}
-
-function renderServices() {
-  const items = movements.filter((item) => belongsToSelectedMonth(item) && isServiceMovement(item));
-  const saved = catalog.filter((item) => item.kind === "service");
-  return `${heading("Tu trabajo", "Trabajos y servicios", "Controla tus propios pedidos personalizados, citas, anticipos, entregas o servicios.", `<button class="button outline" data-action="show-registration-example">Ver ejemplo</button><button class="button primary" data-action="new-service">＋ Registrar trabajo o servicio</button>`)}
-    ${monthRecordSection(items, "Aún no registras trabajos o servicios", "Agrega un trabajo, cita, pedido personalizado o servicio de tu negocio.", "new-service", "Registrar trabajo o servicio")}
-    <div style="height:14px"></div><section class="card service-catalog-card"><div class="section-title"><div><h3>Trabajos y servicios frecuentes</h3><p>Guárdalos una vez para registrar tus cobros más rápido.</p></div><button class="button small outline" data-action="new-catalog">＋ Agregar</button></div>${saved.length ? `<div class="catalog-compact">${saved.map((item) => `<button class="catalog-compact-item" data-action="sell-catalog" data-id="${item.id}"><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category || "Servicio")}</small></span><strong>${money(item.price)}</strong></button>`).join("")}</div>` : `<p class="muted-copy">Todavía no guardas servicios frecuentes. Esto es opcional y solo organiza tu propio negocio.</p>`}</section>`;
-}
-
-function renderExpenses() {
-  const items = movements.filter((item) => belongsToSelectedMonth(item) && item.type === "expense");
-  const total = items.reduce((sum, item) => sum + number(item.amount), 0);
-  return `${heading("Salidas de tu negocio", "Gastos", "Registra lo que tú pagas para trabajar: materiales, publicidad, herramientas, comisiones y otros gastos.", `<button class="button outline" data-action="show-registration-example">Ver ejemplo</button><button class="button danger" data-action="new-expense">− Registrar gasto</button>`)}
-    <section class="grid metrics-grid">${metric("−", "Gastos del mes", money(total), `${items.length} ${items.length === 1 ? "registro" : "registros"}`, "negative")}</section><div style="height:14px"></div>
-    ${monthRecordSection(items, "Aún no registras gastos este mes", "Agrega una salida propia de tu negocio para calcular mejor tu ganancia.", "new-expense", "Registrar gasto")}`;
-}
-
-function invoiceCards(items) {
-  return `<div class="invoice-list">${items.map((item) => `<article class="invoice-item"><div><span class="status ${item.tax?.invoiceStatus === "pending" ? "pending" : item.tax?.invoiceStatus === "none" ? "" : "paid"}">${escapeHtml(invoiceStatusLabel(item))}</span><h3>${escapeHtml(item.concept)}</h3><p>${item.type === "income" ? "Venta o ingreso" : "Gasto"} · ${escapeHtml(readableDate(item.date))} · ${escapeHtml(item.party || "Sin nombre")}</p></div><div class="invoice-item-side"><b>${money(item.amount)}</b><button class="button small outline" data-action="edit-movement" data-id="${item.id}">Revisar</button></div></article>`).join("")}</div>`;
-}
-
-function renderInvoices() {
-  const items = movements.filter(belongsToSelectedMonth);
-  const pending = items.filter((item) => item.tax?.invoiceStatus === "pending").length;
-  const ready = items.filter((item) => ["issued", "received", "global"].includes(item.tax?.invoiceStatus)).length;
-  const none = items.filter((item) => !item.tax?.invoiceStatus || item.tax?.invoiceStatus === "none").length;
-  return `${heading("Tus comprobantes", "Facturas", "Revisa las facturas de tus propias ventas y gastos. Esta sección no contiene documentos ni operaciones de MY.")}
-    <section class="grid metrics-grid">${metric("!", "Pendientes", String(pending), "Comprobantes que falta revisar", pending ? "warning" : "")}${metric("✓", "Emitidas o recibidas", String(ready), "Marcadas por ti")}${metric("—", "Sin factura / no aplica", String(none), "Según lo que seleccionaste")}</section><div style="height:14px"></div>
-    <section class="card table-card">${items.length ? invoiceCards(items) : `<div style="padding:18px">${emptyState("Todavía no hay movimientos", "Las facturas aparecerán aquí cuando registres tus propias ventas o gastos.", "new-income", "Registrar ingreso")}</div>`}</section>`;
 }
 
 function renderCatalog() {
@@ -465,58 +454,124 @@ function renderPending() {
 }
 
 function renderTaxes() {
+  if (settings?.fiscalProfilePending || !(settings?.regimeHistory || []).length) {
+    return `${heading("Perfil Fiscal", "Perfil Fiscal / SAT", "Puedes usar Ingresos, Egresos y Utilidad sin configurar esta parte todavía.", `<button class="button primary" data-action="change-regime">Configurar Perfil Fiscal</button>`)}<section class="card"><div class="section-title"><div><h3>Configuración pendiente</h3><p>Completa esta sección cuando tengas tu constancia o quieras organizar impuestos estimados.</p></div></div><div class="tax-note"><b>Importante:</b> MY no asigna un régimen por ti. Cuando lo configures, podrás conservar un historial por fecha sin borrar movimientos anteriores.</div></section>`;
+  }
   const { from, to } = monthBounds();
   const tax = calculateTaxSummary(movements, settings, from, to);
   const profile = taxProfileForDate(settings, to);
   const regime = getRegime(profile.personType, profile.regimeId);
   const history = [...(settings.regimeHistory || [])].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
-  return `${heading("Organizador fiscal", "SAT y régimen fiscal", "La vista se adapta a tu régimen y conserva el historial si cambias en el futuro.", `<button class="button primary" data-action="change-regime">Cambiar o agregar régimen</button>`)}
+  return `${heading("Perfil Fiscal", "Perfil Fiscal / SAT", "Configura tu situación fiscal cuando estés lista. Conservamos el historial si cambias de régimen.", `<button class="button primary" data-action="change-regime">Cambiar o agregar régimen</button>`)}
     <section class="tax-hero"><div class="tax-hero-top"><div><h3>${escapeHtml(regime.shortLabel)}</h3><p>${escapeHtml(regime.description)} Periodicidad orientativa: ${escapeHtml(regime.frequency)}.</p></div><span class="tax-badge">${profile.personType === "individual" ? "Persona física" : "Persona moral"}</span></div><div class="tax-metrics"><div class="tax-metric"><span>Ingresos sin IVA</span><b>${money(tax.incomeBeforeVat)}</b></div><div class="tax-metric"><span>IVA por revisar</span><b>${money(tax.netVat)}</b></div><div class="tax-metric"><span>ISR estimado</span><b>${money(tax.netIsr)}</b></div><div class="tax-metric"><span>Apartado sugerido</span><b>${money(tax.totalReserve)}</b></div></div></section>
     <div class="tax-note"><b>Importante:</b> esta sección organiza tus datos y genera una estimación para apartar dinero; no sustituye la declaración del SAT ni la revisión de una contadora. Las obligaciones exactas dependen de tu constancia, actividad, deducciones, retenciones y situación particular.</div>
     <div style="height:14px"></div><section class="grid two-grid"><article class="card"><div class="section-title"><div><h3>Control del mes</h3><p>${escapeHtml(monthName(state.month))}</p></div></div><div class="rank-list"><div class="rank-row"><span class="rank-name">IVA trasladado</span><span class="rank-track"><span class="rank-fill" style="width:100%"></span></span><span class="rank-value">${money(tax.vatTransferred)}</span></div><div class="rank-row"><span class="rank-name">IVA acreditable</span><span class="rank-track"><span class="rank-fill" style="width:${Math.min(100, tax.vatCreditable / Math.max(1, tax.vatTransferred) * 100)}%"></span></span><span class="rank-value">${money(tax.vatCreditable)}</span></div><div class="rank-row"><span class="rank-name">ISR retenido</span><span class="rank-track"><span class="rank-fill" style="width:${Math.min(100, tax.withheldIsr / Math.max(1, tax.isrEstimate) * 100)}%"></span></span><span class="rank-value">${money(tax.withheldIsr)}</span></div><div class="rank-row"><span class="rank-name">Comprobantes pendientes</span><span class="rank-track"><span class="rank-fill" style="width:${Math.min(100, tax.invoicesMissing * 12)}%"></span></span><span class="rank-value">${tax.invoicesMissing}</span></div></div></article><article class="card"><div class="section-title"><div><h3>Historial de régimen</h3><p>Los movimientos conservan el régimen que les correspondía</p></div></div><div class="regime-history">${history.map((item) => { const itemRegime = getRegime(item.personType, item.regimeId); return `<div class="regime-row"><span class="regime-date">Desde<br>${escapeHtml(readableDate(item.effectiveFrom))}</span><div><b>${escapeHtml(itemRegime.shortLabel)}</b><span>${item.personType === "individual" ? "Persona física" : "Persona moral"} · ${escapeHtml(itemRegime.frequency)}</span></div>${item.id === profile.id ? '<span class="status paid">Actual</span>' : ""}</div>`; }).join("")}</div></article></section>
-    <div style="height:14px"></div><section class="card"><div class="section-title"><div><h3>Fuentes oficiales y revisión</h3><p>Consulta siempre tu constancia y las reglas vigentes</p></div></div><div class="page-actions" style="justify-content:flex-start"><a class="button outline" target="_blank" rel="noopener" href="${SAT_REFERENCE_URLS.regimes}">Ver regímenes en SAT</a><a class="button outline" target="_blank" rel="noopener" href="${regime.id === "resico_pf" ? SAT_REFERENCE_URLS.resicoPf : regime.id === "platforms_pf" ? SAT_REFERENCE_URLS.platforms : SAT_REFERENCE_URLS.declarations}">Consultar obligación oficial</a></div></section>`;
+    <div style="height:14px"></div><section class="card"><div class="section-title"><div><h3>Fuentes oficiales y revisión</h3><p>Consulta siempre tu constancia y las reglas vigentes</p></div></div><div class="page-actions" style="justify-content:flex-start"><a class="button outline" target="_blank" rel="noopener" href="${SAT_REFERENCE_URLS.regimes}">Referencia oficial SAT</a><a class="button outline" target="_blank" rel="noopener" href="${regime.id === "resico_pf" ? SAT_REFERENCE_URLS.resicoPf : regime.id === "resico_pm" ? SAT_REFERENCE_URLS.resicoCorporate : SAT_REFERENCE_URLS.declarations}">Consultar obligación oficial</a></div></section>`;
+}
+
+
+function goalCatalogItems(goal) {
+  const ids = new Set(Array.isArray(goal?.catalogIds) ? goal.catalogIds : []);
+  const chosen = catalog.filter((item) => ids.has(item.id));
+  return chosen.length ? chosen : catalog;
+}
+
+function goalResult(goal) {
+  return solveGoal({ goal, items: goalCatalogItems(goal), movements });
+}
+
+function goalStatusText(result) {
+  if (result.remaining <= 0) return "Meta alcanzada";
+  if (!result.feasible) return `Con la capacidad registrada faltan ${money(result.shortfall)}`;
+  return `Faltan ${money(result.remaining)}`;
+}
+
+function renderGoals() {
+  const active = goals.filter((g) => g.status !== "closed");
+  const cards = active.map((goal) => {
+    const result = goalResult(goal);
+    const label = goal.type === "profit" ? "utilidad" : "ventas";
+    const plan = result.plan.length ? result.plan.map((x) => `<li><b>${x.units}</b> × ${escapeHtml(x.name)} <span>≈ ${money(x.contribution)}</span></li>`).join("") : "";
+    return `<article class="card goal-card"><div class="goal-card-head"><div><span class="goal-kind">${goal.type === "profit" ? "UTILIDAD" : "VENTAS"}</span><h3>${money(goal.target)} de ${label}</h3><p>${escapeHtml(readableDate(goal.from))} → ${escapeHtml(readableDate(goal.to))}</p></div><div class="goal-progress-number">${result.progressPct.toFixed(0)}%</div></div><div class="goal-progress"><span style="width:${result.progressPct}%"></span></div><div class="goal-metrics"><div><span>Conseguido</span><b>${money(result.achieved)}</b></div><div><span>Falta</span><b>${money(result.remaining)}</b></div><div><span>Unidades</span><b>${result.units}</b></div><div><span>Por día</span><b>${result.dailyUnits}</b></div></div>${plan ? `<div class="goal-plan"><b>Combinación sugerida</b><ul>${plan}</ul></div>` : `<div class="goal-plan"><b>${result.remaining <= 0 ? "¡Meta alcanzada!" : "Agrega productos o servicios con precio y costo para calcular el plan."}</b></div>`}<div class="goal-note ${result.feasible ? "" : "warning"}">${escapeHtml(goalStatusText(result))}. Con una conversión de ${result.conversionRate.toFixed(0)}%, la referencia es contactar aproximadamente a <b>${result.contacts}</b> personas (${result.dailyContacts}/día).</div><div class="catalog-actions"><button class="button small soft" data-action="goal-to-route" data-id="${goal.id}">Enviar a Mi Ruta / Mi día</button><button class="button small outline" data-action="edit-goal" data-id="${goal.id}">Editar</button><button class="button small danger" data-action="delete-goal" data-id="${goal.id}">Eliminar</button></div></article>`;
+  }).join("");
+  return `${heading("De una cantidad a un plan", "🎯 Mi Meta", "Dime cuánto quieres vender o ganar y MY lo convierte en cantidades, capacidad y acciones.", `<button class="button primary" data-action="new-goal">＋ Crear meta</button>`)}<section class="goal-explainer"><b>Vender no es lo mismo que ganar.</b><span>Meta de ventas usa el precio de venta. Meta de utilidad usa precio menos costo y descuenta el resultado real ya acumulado del periodo.</span></section>${active.length ? `<section class="goal-grid">${cards}</section>` : emptyState("Aún no tienes una meta", "Crea una meta diaria, semanal, mensual o con fechas personalizadas y selecciona con qué productos o servicios quieres alcanzarla.", "new-goal", "Crear mi primera meta")}`;
+}
+
+function openGoalModal(id = "") {
+  const goal = id ? goals.find((g) => g.id === id) : null;
+  const from = goal?.from || today();
+  const defaultTo = new Date(`${from}T12:00:00`); defaultTo.setDate(defaultTo.getDate() + 6);
+  const to = goal?.to || defaultTo.toISOString().slice(0, 10);
+  const selected = new Set(goal?.catalogIds || catalog.map((x) => x.id));
+  const list = catalog.length ? `<div class="goal-choice-list">${catalog.map((item) => `<label class="goal-choice"><input type="checkbox" name="catalogIds" value="${item.id}" ${selected.has(item.id) ? "checked" : ""}><span><b>${escapeHtml(item.name)}</b><small>${item.kind === "service" ? "Servicio" : "Producto"} · Precio ${money(item.price)} · Costo ${money(item.cost)} · Utilidad ${money(number(item.price)-number(item.cost))}</small></span></label>`).join("")}</div>` : `<div class="backup-warning">Primero agrega al menos un producto o servicio con precio y costo. Mi Meta usa ese mismo catálogo; no crea otro.</div>`;
+  openModal(goal ? "Editar Mi Meta" : "Crear Mi Meta", "La meta vive dentro de tu misma identidad financiera y se actualiza con tus movimientos.", `<form id="goalForm" class="form-grid"><input type="hidden" name="id" value="${escapeHtml(goal?.id || "")}"><div class="field"><label for="goalType">¿Qué quieres conseguir?</label><select id="goalType" name="type"><option value="profit" ${goal?.type !== "sales" ? "selected" : ""}>Quiero ganar / utilidad</option><option value="sales" ${goal?.type === "sales" ? "selected" : ""}>Quiero vender / ingresos</option></select></div><div class="field"><label for="goalTarget">Cantidad objetivo</label><input id="goalTarget" name="target" type="number" min="0.01" step="0.01" required value="${escapeHtml(goal?.target ?? "")}" placeholder="Ej. 5000"></div><div class="field"><label for="goalFrom">Desde</label><input id="goalFrom" name="from" type="date" required value="${from}"></div><div class="field"><label for="goalTo">Hasta</label><input id="goalTo" name="to" type="date" required value="${to}"></div><div class="field full"><label for="goalConversion">¿De cada 100 personas a las que ofreces, cuántas suelen comprarte?</label><input id="goalConversion" name="conversionRate" type="number" min="1" max="100" step="1" value="${escapeHtml(goal?.conversionRate ?? 25)}"><small>Si todavía no lo sabes, 25% funciona solo como referencia inicial y puedes cambiarlo después.</small></div><div class="field full"><label>¿Con qué quieres conseguirlo?</label>${list}</div></form>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-goal" ${catalog.length ? "" : "disabled"}>Guardar meta</button>`);
+}
+
+async function saveGoalFromForm() {
+  const form = document.getElementById("goalForm");
+  if (!form?.reportValidity()) return;
+  const data = new FormData(form);
+  const from = String(data.get("from"));
+  const to = String(data.get("to"));
+  if (to < from) return toast("La fecha final no puede ser anterior a la inicial", "error");
+  const catalogIds = data.getAll("catalogIds").map(String);
+  if (!catalogIds.length) return toast("Selecciona al menos un producto o servicio", "error");
+  const id = String(data.get("id") || "");
+  const current = id ? goals.find((g) => g.id === id) : null;
+  const goal = { ...(current || {}), id: id || `${GOAL_PREFIX}${uid("goal")}`, kind: "finance_goal", type: String(data.get("type")) === "sales" ? "sales" : "profit", target: number(data.get("target")), from, to, conversionRate: number(data.get("conversionRate") || 25), catalogIds, status: "active", createdAt: current?.createdAt || nowIso(), updatedAt: nowIso() };
+  await store.put("meta", goal);
+  await loadData();
+  closeModal();
+  state.tab = "goals";
+  render();
+  toast(current ? "Meta actualizada" : "Meta creada", "success");
+}
+
+async function sendGoalToRoute(id) {
+  const goal = goals.find((g) => g.id === id);
+  if (!goal) return;
+  const result = goalResult(goal);
+  const payload = {
+    id: `goal_route_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    userId: context.userId,
+    goalId: goal.id,
+    createdAt: nowIso(),
+    type: goal.type,
+    target: goal.target,
+    from: goal.from,
+    to: goal.to,
+    remaining: result.remaining,
+    units: result.units,
+    dailyUnits: result.dailyUnits,
+    contacts: result.contacts,
+    dailyContacts: result.dailyContacts,
+    plan: result.plan.map((x) => ({ id: x.id, name: x.name, units: x.units, contribution: x.contribution })),
+  };
+  let queue = [];
+  try {
+    let raw = localStorage.getItem(MYGOAL_ROUTE_QUEUE_KEY), legacyKey = "";
+    if (!raw) { for (const k of LEGACY_MYGOAL_ROUTE_QUEUE_KEYS) { raw = localStorage.getItem(k); if (raw) { legacyKey = k; break; } } }
+    queue = JSON.parse(raw || "[]"); if (!Array.isArray(queue)) queue = [];
+    if (legacyKey && queue.length) { localStorage.setItem(MYGOAL_ROUTE_QUEUE_KEY, JSON.stringify(queue)); try { localStorage.removeItem(legacyKey); } catch {} }
+  } catch { queue = []; }
+  queue = queue.filter((x) => x && x.userId === context.userId).slice(-9);
+  queue.push(payload);
+  try { localStorage.setItem(MYGOAL_ROUTE_QUEUE_KEY, JSON.stringify(queue)); } catch { return toast("El navegador no permitió preparar el plan para Mi Ruta", "error"); }
+  try { window.dispatchEvent(new CustomEvent("my-finance-goal-plan", { detail: payload })); } catch {}
+  toast("Plan preparado para Mi Ruta / Mi día en MY", "success");
 }
 
 function renderReports() {
   const report = buildReport({ movements, catalog, settings, from: state.reportFrom, to: state.reportTo });
   return `${heading("Descarga tus resultados", "Reportes de tu negocio", "Elige un periodo y guarda un documento PDF o Word generado en este dispositivo.")}
-    <section class="report-options"><article class="card"><div class="section-title"><div><h3>Periodo del reporte</h3><p>Puede ser semanal, mensual o personalizado</p></div></div><div class="form-grid"><div class="field"><label for="reportFrom">Desde</label><input id="reportFrom" data-change="report-from" type="date" value="${state.reportFrom}"></div><div class="field"><label for="reportTo">Hasta</label><input id="reportTo" data-change="report-to" type="date" value="${state.reportTo}"></div></div><div class="report-buttons"><button class="button primary" data-action="export-pdf">Descargar PDF</button><button class="button outline" data-action="export-word">Descargar Word</button></div><div class="privacy-explainer"><span aria-hidden="true">✓</span><span>Los documentos se generan en tu dispositivo. Tu información financiera no se envía a MY ni a Supabase.</span></div></article><article class="report-preview"><h3>${escapeHtml(settings.businessName || "Mi negocio")}</h3><p>${escapeHtml(readableDate(state.reportFrom))} al ${escapeHtml(readableDate(state.reportTo))}</p><div class="report-summary"><div><span>Ingresos</span><b>${money(report.summary.income)}</b></div><div><span>Gastos y costos</span><b>${money(report.summary.expense + report.summary.salesCost)}</b></div><div><span>Ganancia</span><b>${money(report.summary.profit)}</b></div><div><span>Por cobrar</span><b>${money(report.summary.pending)}</b></div></div><p style="font-size:11px;color:var(--muted);margin:13px 0 0">${report.summary.count} movimientos incluidos.</p></article></section>`;
-}
-
-function renderClosing() {
-  const { from, to } = monthBounds();
-  const summary = summaryFor(from, to);
-  const closure = monthClosure();
-  const closed = closure.status === "closed";
-  return `${heading("Resultados de tu negocio", "Cierre mensual", "Revisa tus propios ingresos, gastos, ganancia, SAT y facturas antes de cerrar el mes.", `<button class="button outline" data-action="show-registration-example">¿Cómo funciona?</button>`)}
-    <section class="closure-hero ${closed ? "is-closed" : ""}"><div><p class="eyebrow">${escapeHtml(monthName(state.month))}</p><h3>${closed ? "Mes cerrado" : "Mes abierto"}</h3><p>${closed ? `Cerrado el ${escapeHtml(readableDate(String(closure.closedAt || "").slice(0, 10)))}` : "Todavía puedes agregar o corregir tus registros."}</p></div><span class="closure-mark" aria-hidden="true">${closed ? "✓" : "○"}</span></section>
-    <div style="height:14px"></div><section class="grid metrics-grid">${metric("$", "Ingresos cobrados", money(summary.income), "Dinero recibido en el mes", "positive")}${metric("−", "Gastos y costos", money(summary.expenses + summary.cost), "Salidas registradas", "negative")}${metric("=", "Ganancia estimada", money(summary.profit), "Ingresos menos gastos y costos", summary.profit >= 0 ? "positive" : "negative")}${metric("!", "Por cobrar", money(summary.pending), "Pendiente acumulado", summary.pending ? "warning" : "")}</section>
-    <div style="height:14px"></div><section class="card"><div class="section-title"><div><h3>Descargar resultados del mes</h3><p>El PDF y Word se generan únicamente en tu dispositivo con tus propios registros.</p></div></div><div class="report-buttons"><button class="button primary" data-action="export-month-pdf">Descargar PDF</button><button class="button outline" data-action="export-month-word">Descargar Word</button></div></section>
-    <div style="height:14px"></div><section class="card"><div class="section-title"><div><h3>Estado del mes</h3><p>${closed ? "Reábrelo solamente si necesitas corregir o agregar información." : "Antes de cerrar, verifica ventas, gastos, facturas y SAT."}</p></div><span class="status ${closed ? "paid" : "pending"}">${closed ? "Cerrado" : "Abierto"}</span></div><div class="page-actions closure-actions">${closed ? `<button class="button outline" data-action="reopen-month">Reabrir mes</button>` : `<button class="button primary" data-action="close-month">Cerrar este mes</button>`}</div></section>`;
-}
-
-function openRegistrationExample() {
-  const type = settings.businessType || "both";
-  const examples = [];
-  if (type !== "services") examples.push({ icon: "□", title: "Ejemplo de producto", text: "Producto vendido por $350 · costo $140 · cobrado $350. Así se calcula la ganancia aproximada.", action: "example-income", label: "Registrar un producto" });
-  if (type !== "products") examples.push({ icon: "◇", title: "Ejemplo de trabajo o servicio", text: "Servicio por $800 · anticipo recibido $400 · quedan $400 por cobrar. El pendiente aparece automáticamente.", action: "example-service", label: "Registrar un servicio" });
-  examples.push({ icon: "−", title: "Ejemplo de gasto", text: "Material, herramienta, comisión o publicidad por $250. Elige si tiene factura y la forma de pago.", action: "example-expense", label: "Registrar un gasto" });
-  openModal("Ejemplos para tu propio negocio", "Son ejemplos generales. Sustituye los nombres y cantidades por los de tu producto o servicio.", `<div class="example-grid">${examples.map((item) => `<article class="example-card"><span aria-hidden="true">${item.icon}</span><h3>${item.title}</h3><p>${item.text}</p><button class="button small outline" data-action="${item.action}">${item.label}</button></article>`).join("")}</div><div class="privacy-explainer" style="margin-top:14px"><span aria-hidden="true">✓</span><span>Estos ejemplos no se guardan. Tus registros reales pertenecen únicamente a tu cuenta y a tu negocio.</span></div>`, `<button class="button primary" data-action="close-modal">Entendido</button>`);
-}
-
-async function setMonthClosure(status) {
-  const next = { ...(settings.monthClosures || {}) };
-  next[state.month] = status === "closed" ? { status, closedAt: nowIso() } : { status: "open", reopenedAt: nowIso() };
-  await saveSettings({ monthClosures: next });
-  render();
-  toast(status === "closed" ? "Mes cerrado correctamente" : "Mes reabierto", "success");
+    <section class="report-options"><article class="card"><div class="section-title"><div><h3>Periodo del reporte</h3><p>Puede ser semanal, mensual o personalizado</p></div></div><div class="form-grid"><div class="field"><label for="reportFrom">Desde</label><input id="reportFrom" data-change="report-from" type="date" value="${state.reportFrom}"></div><div class="field"><label for="reportTo">Hasta</label><input id="reportTo" data-change="report-to" type="date" value="${state.reportTo}"></div></div><div class="report-buttons"><button class="button primary" data-action="export-pdf">Descargar PDF</button><button class="button outline" data-action="export-word">Descargar Word</button></div><div class="privacy-explainer"><span aria-hidden="true">✓</span><span>Los documentos se generan en tu dispositivo. Tus datos financieros se sincronizan de forma privada con tu identidad MY para conservar continuidad entre dispositivos; otras integrantes no pueden verlos.</span></div></article><article class="report-preview"><h3>${escapeHtml(settings.businessName || "Mi negocio")}</h3><p>${escapeHtml(readableDate(state.reportFrom))} al ${escapeHtml(readableDate(state.reportTo))}</p><div class="report-summary"><div><span>Ingresos</span><b>${money(report.summary.income)}</b></div><div><span>Egresos y costos</span><b>${money(report.summary.expense + report.summary.salesCost)}</b></div><div><span>Utilidad</span><b>${money(report.summary.profit)}</b></div><div><span>Por cobrar</span><b>${money(report.summary.pending)}</b></div></div><p style="font-size:11px;color:var(--muted);margin:13px 0 0">${report.summary.count} movimientos incluidos.</p></article></section>`;
 }
 
 function render() {
   if (!document.querySelector(".finance-shell")) root.innerHTML = shellHtml();
   const nav = document.querySelector(".finance-nav");
   if (nav) nav.innerHTML = NAV_ITEMS.map(([id, label]) => `<button data-tab="${id}" class="${state.tab === id ? "active" : ""}">${label}</button>`).join("");
-  const views = { summary: renderSummary, income: renderIncome, services: renderServices, expenses: renderExpenses, invoices: renderInvoices, taxes: renderTaxes, closing: renderClosing };
+  const views = { summary: renderSummary, movements: renderMovements, catalog: renderCatalog, pending: renderPending, taxes: renderTaxes, goals: renderGoals, reports: renderReports };
   document.getElementById("financeContent").innerHTML = (views[state.tab] || renderSummary)();
 }
 
@@ -526,7 +581,7 @@ function regimeOptions(personType, selected) {
 
 function renderWelcome() {
   root.className = "";
-  root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><h1>¿Ya utilizaste Finanzas en otro dispositivo?</h1><p class="onboarding-lead">No encontramos información financiera guardada en este dispositivo. Si ya registraste ventas o gastos anteriormente, puedes recuperar todo tu dashboard con tu archivo de respaldo.</p><div class="choice-grid"><button class="choice-card primary" data-action="restore"><span aria-hidden="true">↥</span><h2>Restaurar mis datos</h2><p>Selecciona tu archivo <b>.myfinanzas</b> y escribe la contraseña que creaste.</p></button><button class="choice-card" data-action="start-setup"><span aria-hidden="true">＋</span><h2>Comenzar desde cero</h2><p>Elige esta opción si es la primera vez que utilizas Finanzas.</p></button></div><div class="privacy-explainer"><span aria-hidden="true">✓</span><span><b>Tu privacidad está protegida.</b> MY no puede ver tus ventas, gastos, ganancias ni clientes. Todo se guarda en este dispositivo.</span></div></div></section>`;
+  root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><h1>¿Ya utilizaste Finanzas en otro dispositivo?</h1><p class="onboarding-lead">No encontramos información financiera local todavía. Primero intentaremos recuperar tu sincronización privada; si además tienes un respaldo cifrado, también puedes restaurarlo manualmente.</p><div class="choice-grid"><button class="choice-card primary" data-action="restore"><span aria-hidden="true">↥</span><h2>Restaurar mis datos</h2><p>Selecciona tu archivo <b>.myfinanzas</b> y escribe la contraseña que creaste.</p></button><button class="choice-card" data-action="start-setup"><span aria-hidden="true">＋</span><h2>Comenzar desde cero</h2><p>Elige esta opción si es la primera vez que utilizas Finanzas.</p></button></div><div class="privacy-explainer"><span aria-hidden="true">✓</span><span><b>Tu privacidad está protegida.</b> Tus ventas, egresos, utilidad y clientes pertenecen a tu identidad financiera privada. La sincronización usa tu cuenta validada y el respaldo sigue bajo tu control.</span></div></div></section>`;
 }
 
 function renderSetup(step = 1, data = {}) {
@@ -539,11 +594,11 @@ function renderSetup(step = 1, data = {}) {
     manualIsrReservePercent: data.manualIsrReservePercent || 10,
   };
   if (step === 1) {
-    root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><div class="setup-step"><p class="eyebrow">Paso 1 de 2</p><h2>Cuéntanos sobre tu negocio</h2><p>Esto personaliza los campos y los reportes. Podrás modificarlo después.</p><form id="setupBusiness" class="form-grid"><div class="field full"><label for="setupBusinessName">Nombre del negocio</label><input id="setupBusinessName" name="businessName" required value="${escapeHtml(draft.businessName)}" placeholder="Ej. Tu negocio"></div><div class="field"><label for="setupBusinessType">¿Qué vendes?</label><select id="setupBusinessType" name="businessType"><option value="products" ${draft.businessType === "products" ? "selected" : ""}>Productos</option><option value="services" ${draft.businessType === "services" ? "selected" : ""}>Servicios</option><option value="both" ${draft.businessType === "both" ? "selected" : ""}>Productos y servicios</option></select></div><div class="field"><label for="setupCurrency">Moneda</label><select id="setupCurrency" name="currency"><option value="MXN" ${draft.currency === "MXN" ? "selected" : ""}>Peso mexicano (MXN)</option><option value="USD" ${draft.currency === "USD" ? "selected" : ""}>Dólar (USD)</option><option value="CAD" ${draft.currency === "CAD" ? "selected" : ""}>Dólar canadiense (CAD)</option><option value="EUR" ${draft.currency === "EUR" ? "selected" : ""}>Euro (EUR)</option></select></div></form><div class="setup-actions"><button class="button outline" data-action="back-welcome">Atrás</button><button class="button primary" data-action="setup-tax">Continuar</button></div></div></div></section>`;
+    root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><div class="setup-step"><p class="eyebrow">Paso 1 de 2</p><h2>Cuéntanos sobre tu negocio</h2><p>Esto personaliza los campos y los reportes. Podrás modificarlo después.</p><form id="setupBusiness" class="form-grid"><div class="field full"><label for="setupBusinessName">Nombre del negocio</label><input id="setupBusinessName" name="businessName" required value="${escapeHtml(draft.businessName)}" placeholder="Ej. Creaciones Luna"></div><div class="field"><label for="setupBusinessType">¿Qué vendes?</label><select id="setupBusinessType" name="businessType"><option value="products">Productos</option><option value="services">Servicios</option><option value="both" ${draft.businessType === "both" ? "selected" : ""}>Productos y servicios</option></select></div><div class="field"><label for="setupCurrency">Moneda</label><select id="setupCurrency" name="currency"><option value="MXN">Peso mexicano (MXN)</option><option value="USD">Dólar (USD)</option><option value="CAD">Dólar canadiense (CAD)</option><option value="EUR">Euro (EUR)</option></select></div></form><div class="setup-actions"><button class="button outline" data-action="back-welcome">Atrás</button><button class="button primary" data-action="setup-tax">Continuar</button></div></div></div></section>`;
     root.dataset.setupDraft = JSON.stringify(draft);
     return;
   }
-  root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><div class="setup-step"><p class="eyebrow">Paso 2 de 2</p><h2>Configura tu régimen fiscal</h2><p>La sección SAT cambiará según esta elección. Si después cambias de régimen, podrás agregar la nueva fecha sin borrar el historial.</p><div class="form-grid"><div class="field full"><label for="setupPersonType">Tipo de persona</label><select id="setupPersonType" data-change="setup-person-type"><option value="individual" ${draft.personType === "individual" ? "selected" : ""}>Persona física</option><option value="corporate" ${draft.personType === "corporate" ? "selected" : ""}>Persona moral</option></select></div><div class="field full"><label>Régimen fiscal</label><div id="setupRegimeOptions" class="regime-options">${regimeOptions(draft.personType, draft.regimeId)}</div></div><div class="field full"><label for="setupReserve">Porcentaje personal para apartar ISR cuando no exista cálculo automático</label><input id="setupReserve" type="number" min="0" max="100" step="0.1" value="${draft.manualIsrReservePercent}"><small>Es una provisión personalizable, no el cálculo oficial. Confírmala con tu contadora.</small></div></div><div class="setup-actions"><button class="button outline" data-action="setup-back">Atrás</button><button class="button primary" data-action="finish-setup">Crear mi dashboard</button></div></div></div></section>`;
+  root.innerHTML = `<section class="onboarding"><div class="onboarding-card"><span class="onboarding-logo" aria-hidden="true">MY</span><div class="setup-step"><p class="eyebrow">Paso 2 de 2</p><h2>Perfil Fiscal (opcional)</h2><p>Puedes configurarlo ahora o usar primero Ingresos, Egresos y Utilidad. Si después cambias de régimen, podrás agregar la nueva fecha sin borrar el historial.</p><div class="form-grid"><div class="field full"><label for="setupPersonType">Tipo de persona</label><select id="setupPersonType" data-change="setup-person-type"><option value="individual" ${draft.personType === "individual" ? "selected" : ""}>Persona física</option><option value="corporate" ${draft.personType === "corporate" ? "selected" : ""}>Persona moral</option></select></div><div class="field full"><label>Régimen fiscal</label><div id="setupRegimeOptions" class="regime-options">${regimeOptions(draft.personType, draft.regimeId)}</div></div><div class="field full"><label for="setupReserve">Porcentaje personal para apartar ISR cuando no exista cálculo automático</label><input id="setupReserve" type="number" min="0" max="100" step="0.1" value="${draft.manualIsrReservePercent}"><small>Es una provisión personalizable, no el cálculo oficial. Confírmala con tu contadora.</small></div></div><div class="setup-actions"><button class="button outline" data-action="setup-back">Atrás</button><button class="button soft" data-action="finish-setup-basic">Configurar después</button><button class="button primary" data-action="finish-setup">Guardar Perfil Fiscal</button></div></div></div></section>`;
   root.dataset.setupDraft = JSON.stringify(draft);
 }
 
@@ -563,30 +618,18 @@ function closeModal() {
 
 function openThemeModal() {
   const presets = THEMES.map((theme) => `<button class="theme-option ${settings.themeId === theme.id ? "active" : ""}" data-action="apply-theme" data-theme="${theme.id}"><span class="theme-swatch" style="background:linear-gradient(135deg,${theme.accent},${theme.accent2})"></span><span>${theme.name}</span></button>`).join("");
-  openModal("Color de detalles", "Cambia botones, títulos, indicadores y acentos. El fondo permanecerá igual.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customAccent">O elige tu propio color</label><input id="customAccent" type="color" value="${escapeHtml(settings.accent || THEMES[0].accent)}" style="height:54px;padding:5px"><small>Este control no modifica el fondo.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-theme">Guardar color</button>`);
-}
-
-function openBackgroundModal() {
-  const presets = BACKGROUNDS.map((background) => `<button class="theme-option ${(settings.backgroundId === background.id || (!settings.backgroundId && background.id === "beige")) ? "active" : ""}" data-action="apply-background" data-background="${background.id}"><span class="theme-swatch" style="background:linear-gradient(135deg,${background.header},${background.panel2})"></span><span>${background.name}</span></button>`).join("");
-  openModal("Fondo de mis Finanzas", "Cambia las áreas grandes y el encabezado con tonos suaves. Tus botones conservarán su color.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customBackground">O elige un fondo personalizado</label><input id="customBackground" type="color" value="${escapeHtml(settings.backgroundColor || BACKGROUNDS[0].base)}" style="height:54px;padding:5px"><small>El fondo y el color de detalles funcionan por separado.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-background">Guardar fondo</button>`);
+  openModal("Color de mis Finanzas", "Solo cambiará tu dashboard financiero en esta cuenta.", `<div class="theme-grid">${presets}</div><div class="field" style="margin-top:15px"><label for="customAccent">O elige tu propio color principal</label><input id="customAccent" type="color" value="${escapeHtml(settings.accent || THEMES[0].accent)}" style="height:54px;padding:5px"><small>No cambiará la tipografía, estructura ni otras secciones de la Plataforma VIP.</small></div>`, `<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-custom-theme">Guardar color</button>`);
 }
 
 function catalogOptions(selectedId = "") {
   return `<option value="">Sin producto o servicio guardado</option>${catalog.map((item) => `<option value="${item.id}" ${item.id === selectedId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}`;
 }
 
-function openMovementModal(type, id = "", catalogId = "", presetCategory = "") {
+function openMovementModal(type, id = "", catalogId = "") {
   const item = id ? movements.find((movement) => movement.id === id) : null;
-  const targetMonth = item ? movementMonth(item) : state.month;
-  if (monthIsClosed(targetMonth)) {
-    toast("Este mes está cerrado. Reábrelo desde Cierre mensual para hacer cambios.", "error");
-    return;
-  }
   const kind = item?.type || type;
-  const defaultDate = state.month === today().slice(0, 7) ? today() : `${state.month}-01`;
   const selectedCatalog = catalog.find((entry) => entry.id === (item?.catalogId || catalogId));
-  const effectivePreset = presetCategory || (selectedCatalog?.kind === "service" ? "Servicio" : "");
-  const profile = item?.taxProfile || taxProfileForDate(settings, item?.date || defaultDate);
+  const profile = item?.taxProfile || taxProfileForDate(settings, item?.date || today());
   const taxOptions = taxFieldsForRegime(profile.personType, profile.regimeId);
   const amount = item?.amount ?? selectedCatalog?.price ?? "";
   const cost = item?.costAmount ?? selectedCatalog?.cost ?? "";
@@ -594,13 +637,8 @@ function openMovementModal(type, id = "", catalogId = "", presetCategory = "") {
   const totalIncludesVat = item?.tax?.includesVat !== false;
   const vatRate = item?.tax?.vatRate ?? 16;
   const categories = kind === "income" ? SALE_CATEGORIES : EXPENSE_CATEGORIES;
-  const body = `<form id="movementForm" class="form-grid"><input type="hidden" name="id" value="${escapeHtml(item?.id || "")}"><input type="hidden" name="type" value="${kind}"><div class="field"><label for="movementDate">Fecha</label><input id="movementDate" name="date" type="date" required value="${escapeHtml(item?.date || defaultDate)}"></div>${kind === "income" ? `<div class="field"><label for="movementPaidDate">Fecha del cobro</label><input id="movementPaidDate" name="paidDate" type="date" value="${escapeHtml(item?.payments?.[0]?.date || item?.date || defaultDate)}"></div><div class="field full"><label for="movementCatalog">Producto o servicio guardado</label><select id="movementCatalog" name="catalogId" data-change="movement-catalog">${catalogOptions(item?.catalogId || catalogId)}</select></div>` : ""}<div class="field full"><label for="movementConcept">${kind === "income" ? "¿Qué vendiste?" : "¿Qué pagaste?"}</label><input id="movementConcept" name="concept" required value="${escapeHtml(item?.concept || selectedCatalog?.name || "")}" placeholder="Describe el movimiento"></div><div class="field"><label for="movementCategory">Categoría</label><select id="movementCategory" name="category">${categories.map((category) => `<option ${item?.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label for="movementParty">${kind === "income" ? "Cliente (opcional)" : "Proveedor (opcional)"}</label><input id="movementParty" name="party" value="${escapeHtml(item?.party || "")}"></div><div class="field"><label for="movementAmount">${kind === "income" ? "Total de la venta" : "Total del gasto"}</label><input id="movementAmount" name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(amount)}"></div>${kind === "income" ? `<div class="field"><label for="movementPaid">Cobrado hasta ahora</label><input id="movementPaid" name="paidAmount" type="number" min="0" step="0.01" value="${escapeHtml(paid)}"></div><div class="field"><label for="movementCost">Costo total de lo vendido</label><input id="movementCost" name="costAmount" type="number" min="0" step="0.01" value="${escapeHtml(cost)}"><small>Ayuda a calcular la ganancia real.</small></div>` : ""}<div class="field"><label for="movementMethod">Forma de pago</label><select id="movementMethod" name="paymentMethod">${PAYMENT_METHODS.map((method) => `<option ${item?.paymentMethod === method ? "selected" : ""}>${escapeHtml(method)}</option>`).join("")}</select></div><div class="form-section"><h4>Datos fiscales · ${escapeHtml(getRegime(profile.personType, profile.regimeId).shortLabel)}</h4><p>Se guardará el régimen correspondiente a la fecha del movimiento, aunque lo cambies después.</p></div><div class="field check full"><label><input name="includesVat" type="checkbox" ${totalIncludesVat ? "checked" : ""}> El importe capturado incluye IVA</label></div><div class="field"><label for="movementVatRate">Tasa de IVA</label><select id="movementVatRate" name="vatRate"><option value="16" ${vatRate === 16 ? "selected" : ""}>16%</option><option value="8" ${vatRate === 8 ? "selected" : ""}>8%</option><option value="0" ${vatRate === 0 ? "selected" : ""}>0%</option><option value="exempt" ${vatRate === "exempt" ? "selected" : ""}>Exento</option></select></div><div class="field"><label for="movementInvoice">Comprobante</label><select id="movementInvoice" name="invoiceStatus"><option value="none" ${item?.tax?.invoiceStatus === "none" ? "selected" : ""}>No aplica / sin factura</option><option value="pending" ${item?.tax?.invoiceStatus === "pending" ? "selected" : ""}>Pendiente</option><option value="issued" ${["issued", "received"].includes(item?.tax?.invoiceStatus) ? "selected" : ""}>${kind === "income" ? "Factura emitida" : "Factura recibida"}</option><option value="global" ${item?.tax?.invoiceStatus === "global" ? "selected" : ""}>Factura global</option></select></div>${taxOptions.showWithholdings && kind === "income" ? `<div class="field"><label for="movementWithheldIsr">ISR retenido</label><input id="movementWithheldIsr" name="withheldIsr" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.withheldIsr || 0)}"></div><div class="field"><label for="movementWithheldVat">IVA retenido</label><input id="movementWithheldVat" name="withheldVat" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.withheldVat || 0)}"></div>` : ""}${taxOptions.showPlatformFields && kind === "income" ? `<div class="field"><label for="movementPlatformFee">Comisión de plataforma</label><input id="movementPlatformFee" name="platformFee" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.platformFee || 0)}"></div>` : ""}${kind === "expense" ? `<div class="field check"><label><input name="deductible" type="checkbox" ${item?.tax?.deductible !== false ? "checked" : ""}> Considerar como gasto del negocio para revisión</label></div><div class="field check"><label><input name="vatCreditable" type="checkbox" ${item?.tax?.vatCreditable !== false ? "checked" : ""}> Considerar el IVA para revisión</label></div>` : ""}<div class="field full"><label for="movementNotes">Notas (opcional)</label><textarea id="movementNotes" name="notes">${escapeHtml(item?.notes || "")}</textarea></div></form>`;
-  const title = item ? "Editar movimiento" : kind === "expense" ? "Registrar gasto" : effectivePreset === "Servicio" ? "Registrar trabajo o servicio" : "Registrar ingreso o venta";
-  openModal(title, "Esta información pertenece únicamente a tu negocio y se guarda en este dispositivo.", body, `${item ? '<button class="button danger" data-action="delete-movement" data-id="' + item.id + '">Eliminar</button>' : ""}<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-movement">Guardar mi registro</button>`);
-  if (!item && effectivePreset) {
-    const category = document.getElementById("movementCategory");
-    if (category) category.value = effectivePreset;
-  }
+  const body = `<form id="movementForm" class="form-grid"><input type="hidden" name="id" value="${escapeHtml(item?.id || "")}"><input type="hidden" name="type" value="${kind}"><div class="field"><label for="movementDate">Fecha</label><input id="movementDate" name="date" type="date" required value="${escapeHtml(item?.date || today())}"></div>${kind === "income" ? `<div class="field"><label for="movementPaidDate">Fecha del cobro</label><input id="movementPaidDate" name="paidDate" type="date" value="${escapeHtml(item?.payments?.[0]?.date || item?.date || today())}"></div><div class="field full"><label for="movementCatalog">Producto o servicio guardado</label><select id="movementCatalog" name="catalogId" data-change="movement-catalog">${catalogOptions(item?.catalogId || catalogId)}</select></div>` : ""}<div class="field full"><label for="movementConcept">${kind === "income" ? "¿Qué vendiste?" : "¿Qué pagaste?"}</label><input id="movementConcept" name="concept" required value="${escapeHtml(item?.concept || selectedCatalog?.name || "")}" placeholder="Describe el movimiento"></div><div class="field"><label for="movementCategory">Categoría</label><select id="movementCategory" name="category">${categories.map((category) => `<option ${item?.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label for="movementParty">${kind === "income" ? "Cliente (opcional)" : "Proveedor (opcional)"}</label><input id="movementParty" name="party" value="${escapeHtml(item?.party || "")}"></div><div class="field"><label for="movementAmount">${kind === "income" ? "Total de la venta" : "Total del gasto"}</label><input id="movementAmount" name="amount" type="number" min="0.01" step="0.01" required value="${escapeHtml(amount)}"></div>${kind === "income" ? `<div class="field"><label for="movementPaid">Cobrado hasta ahora</label><input id="movementPaid" name="paidAmount" type="number" min="0" step="0.01" value="${escapeHtml(paid)}"></div><div class="field"><label for="movementCost">Costo total de lo vendido</label><input id="movementCost" name="costAmount" type="number" min="0" step="0.01" value="${escapeHtml(cost)}"><small>Ayuda a calcular la ganancia real.</small></div>` : ""}<div class="field"><label for="movementMethod">Forma de pago</label><select id="movementMethod" name="paymentMethod">${PAYMENT_METHODS.map((method) => `<option ${item?.paymentMethod === method ? "selected" : ""}>${escapeHtml(method)}</option>`).join("")}</select></div><div class="form-section"><h4>Datos fiscales · ${escapeHtml(getRegime(profile.personType, profile.regimeId).shortLabel)}</h4><p>Se guardará el régimen correspondiente a la fecha del movimiento, aunque lo cambies después.</p></div><div class="field check full"><label><input name="includesVat" type="checkbox" ${totalIncludesVat ? "checked" : ""}> El importe capturado incluye IVA</label></div><div class="field"><label for="movementVatRate">Tasa de IVA</label><select id="movementVatRate" name="vatRate"><option value="16" ${vatRate === 16 ? "selected" : ""}>16%</option><option value="8" ${vatRate === 8 ? "selected" : ""}>8%</option><option value="0" ${vatRate === 0 ? "selected" : ""}>0%</option><option value="exempt" ${vatRate === "exempt" ? "selected" : ""}>Exento</option></select></div><div class="field"><label for="movementInvoice">Comprobante</label><select id="movementInvoice" name="invoiceStatus"><option value="none" ${item?.tax?.invoiceStatus === "none" ? "selected" : ""}>No aplica / sin factura</option><option value="pending" ${item?.tax?.invoiceStatus === "pending" ? "selected" : ""}>Pendiente</option><option value="issued" ${["issued", "received"].includes(item?.tax?.invoiceStatus) ? "selected" : ""}>${kind === "income" ? "Factura emitida" : "Factura recibida"}</option><option value="global" ${item?.tax?.invoiceStatus === "global" ? "selected" : ""}>Factura global</option></select></div>${taxOptions.showWithholdings && kind === "income" ? `<div class="field"><label for="movementWithheldIsr">ISR retenido</label><input id="movementWithheldIsr" name="withheldIsr" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.withheldIsr || 0)}"></div><div class="field"><label for="movementWithheldVat">IVA retenido</label><input id="movementWithheldVat" name="withheldVat" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.withheldVat || 0)}"></div>` : ""}${taxOptions.showPlatformFields && kind === "income" ? `<div class="field"><label for="movementPlatformFee">Comisión de plataforma</label><input id="movementPlatformFee" name="platformFee" type="number" min="0" step="0.01" value="${escapeHtml(item?.tax?.platformFee || 0)}"></div>` : ""}${kind === "expense" ? `<div class="field check"><label><input name="deductible" type="checkbox" ${item?.tax?.deductible !== false ? "checked" : ""}> Considerar como gasto del negocio para revisión</label></div><div class="field check"><label><input name="vatCreditable" type="checkbox" ${item?.tax?.vatCreditable !== false ? "checked" : ""}> Considerar el IVA para revisión</label></div>` : ""}<div class="field full"><label for="movementNotes">Notas (opcional)</label><textarea id="movementNotes" name="notes">${escapeHtml(item?.notes || "")}</textarea></div></form>`;
+  openModal(item ? "Editar movimiento" : kind === "income" ? "Registrar venta" : "Registrar egreso", "Los datos se guardan localmente y se sincronizan de forma privada con tu identidad financiera cuando hay conexión.", body, `${item ? '<button class="button danger" data-action="delete-movement" data-id="' + item.id + '">Eliminar</button>' : ""}<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-movement">Guardar</button>`);
 }
 
 function calculateTaxParts(total, includesVat, rate) {
@@ -621,10 +659,6 @@ async function saveMovementFromForm() {
   const current = id ? movements.find((item) => item.id === id) : null;
   const type = String(data.get("type"));
   const date = String(data.get("date"));
-  if (monthIsClosed(date.slice(0, 7))) {
-    toast("Ese mes está cerrado. Reábrelo antes de guardar cambios.", "error");
-    return;
-  }
   const amount = number(data.get("amount"));
   const paidAmount = type === "income" ? Math.min(amount, Math.max(0, number(data.get("paidAmount")))) : amount;
   const includesVat = data.get("includesVat") === "on";
@@ -684,7 +718,7 @@ async function saveMovementFromForm() {
 
 function openCatalogModal(id = "") {
   const item = id ? catalog.find((entry) => entry.id === id) : null;
-  openModal(item ? "Editar producto o servicio" : "Agregar producto o servicio", "Solo tú podrás ver esta información.", `<form id="catalogForm" class="form-grid"><input type="hidden" name="id" value="${escapeHtml(item?.id || "")}"><div class="field"><label for="catalogKind">Tipo</label><select id="catalogKind" name="kind"><option value="product" ${item?.kind === "product" ? "selected" : ""}>Producto</option><option value="service" ${item?.kind === "service" ? "selected" : ""}>Servicio</option></select></div><div class="field"><label for="catalogCategory">Categoría</label><input id="catalogCategory" name="category" value="${escapeHtml(item?.category || "")}" placeholder="Ej. Productos, diseño o consultoría"></div><div class="field full"><label for="catalogName">Nombre</label><input id="catalogName" name="name" required value="${escapeHtml(item?.name || "")}" placeholder="Ej. Producto principal o servicio inicial"></div><div class="field"><label for="catalogPrice">Precio de venta</label><input id="catalogPrice" name="price" type="number" min="0" step="0.01" required value="${escapeHtml(item?.price ?? "")}"></div><div class="field"><label for="catalogCost">Costo aproximado</label><input id="catalogCost" name="cost" type="number" min="0" step="0.01" value="${escapeHtml(item?.cost ?? "")}"><small>Incluye materiales y otros costos directos.</small></div></form>`, `${item ? `<button class="button danger" data-action="delete-catalog" data-id="${item.id}">Eliminar</button>` : ""}<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-catalog">Guardar</button>`);
+  openModal(item ? "Editar producto o servicio" : "Agregar producto o servicio", "Estos datos alimentan Finanzas y Mi Meta sin crear un sistema paralelo.", `<form id="catalogForm" class="form-grid"><input type="hidden" name="id" value="${escapeHtml(item?.id || "")}"><div class="field"><label for="catalogKind">Tipo</label><select id="catalogKind" name="kind"><option value="product" ${item?.kind === "product" ? "selected" : ""}>Producto</option><option value="service" ${item?.kind === "service" ? "selected" : ""}>Servicio</option></select></div><div class="field"><label for="catalogCategory">Categoría</label><input id="catalogCategory" name="category" value="${escapeHtml(item?.category || "")}" placeholder="Ej. Sublimación"></div><div class="field full"><label for="catalogName">Nombre</label><input id="catalogName" name="name" required value="${escapeHtml(item?.name || "")}" placeholder="Ej. Taza personalizada"></div><div class="field"><label for="catalogPrice">Precio de venta</label><input id="catalogPrice" name="price" type="number" min="0" step="0.01" required value="${escapeHtml(item?.price ?? "")}"></div><div class="field"><label for="catalogCost">Costo aproximado</label><input id="catalogCost" name="cost" type="number" min="0" step="0.01" value="${escapeHtml(item?.cost ?? "")}"><small>Incluye materiales y otros costos directos.</small></div><div class="field"><label for="catalogDailyCapacity">Capacidad máxima por día (opcional)</label><input id="catalogDailyCapacity" name="dailyCapacity" type="number" min="0" step="1" value="${escapeHtml(item?.dailyCapacity ?? "")}" placeholder="Ej. 8"></div><div class="field"><label for="catalogInventory">Inventario disponible (opcional)</label><input id="catalogInventory" name="inventoryAvailable" type="number" min="0" step="1" value="${escapeHtml(item?.inventoryAvailable ?? "")}" placeholder="Ej. 25"></div><div class="field"><label for="catalogServiceMinutes">Minutos por servicio (opcional)</label><input id="catalogServiceMinutes" name="serviceMinutes" type="number" min="0" step="5" value="${escapeHtml(item?.serviceMinutes ?? "")}" placeholder="Ej. 60"></div><div class="field"><label for="catalogHoursDaily">Horas disponibles al día (opcional)</label><input id="catalogHoursDaily" name="hoursAvailableDaily" type="number" min="0" step="0.5" value="${escapeHtml(item?.hoursAvailableDaily ?? "")}" placeholder="Ej. 6"></div></form>`, `${item ? `<button class="button danger" data-action="delete-catalog" data-id="${item.id}">Eliminar</button>` : ""}<button class="button outline" data-action="close-modal">Cancelar</button><button class="button primary" data-action="save-catalog">Guardar</button>`);
 }
 
 async function saveCatalogFromForm() {
@@ -693,7 +727,7 @@ async function saveCatalogFromForm() {
   const data = new FormData(form);
   const id = String(data.get("id") || "");
   const current = id ? catalog.find((item) => item.id === id) : null;
-  const item = { id: id || uid("cat"), kind: String(data.get("kind")), category: String(data.get("category") || "").trim(), name: String(data.get("name") || "").trim(), price: number(data.get("price")), cost: number(data.get("cost")), createdAt: current?.createdAt || nowIso(), updatedAt: nowIso() };
+  const item = { ...(current || {}), id: id || uid("cat"), kind: String(data.get("kind")), category: String(data.get("category") || "").trim(), name: String(data.get("name") || "").trim(), price: number(data.get("price")), cost: number(data.get("cost")), dailyCapacity: data.get("dailyCapacity") === "" ? "" : number(data.get("dailyCapacity")), inventoryAvailable: data.get("inventoryAvailable") === "" ? "" : number(data.get("inventoryAvailable")), serviceMinutes: data.get("serviceMinutes") === "" ? "" : number(data.get("serviceMinutes")), hoursAvailableDaily: data.get("hoursAvailableDaily") === "" ? "" : number(data.get("hoursAvailableDaily")), createdAt: current?.createdAt || nowIso(), updatedAt: nowIso() };
   await store.put("catalog", item);
   await loadData();
   closeModal();
@@ -741,7 +775,7 @@ async function saveRegimeFromForm() {
   const history = (settings.regimeHistory || []).filter((item) => item.effectiveFrom !== effectiveFrom);
   history.push(nextProfile);
   history.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-  await saveSettings({ personType, regimeId, manualIsrReservePercent: nextProfile.manualIsrReservePercent, regimeHistory: history });
+  await saveSettings({ personType, regimeId, manualIsrReservePercent: nextProfile.manualIsrReservePercent, regimeHistory: history, fiscalProfilePending: false });
   closeModal();
   render();
   toast("Régimen guardado sin borrar tu historial", "success");
@@ -847,7 +881,6 @@ async function finishSetup() {
     accentSoft: THEMES[0].soft,
     accentSofter: THEMES[0].softer,
     accentInk: THEMES[0].ink,
-    backgroundId: "beige",
     createdAt: created,
     updatedAt: created,
   };
@@ -859,26 +892,52 @@ async function finishSetup() {
   toast("Tu dashboard está listo", "success");
 }
 
+
+async function finishSetupBasic() {
+  const draft = JSON.parse(root.dataset.setupDraft || "{}");
+  const created = nowIso();
+  settings = {
+    id: "current",
+    businessName: draft.businessName,
+    businessType: draft.businessType,
+    currency: draft.currency,
+    personType: "individual",
+    regimeId: "other_pf",
+    manualIsrReservePercent: 0,
+    regimeHistory: [],
+    fiscalProfilePending: true,
+    themeId: "purple",
+    accent: THEMES[0].accent, accent2: THEMES[0].accent2, accentSoft: THEMES[0].soft, accentSofter: THEMES[0].softer, accentInk: THEMES[0].ink,
+    createdAt: created, updatedAt: created,
+  };
+  await store.put("settings", settings);
+  await loadData();
+  applyTheme(settings);
+  root.innerHTML = shellHtml();
+  render();
+  toast("Dashboard creado. Puedes completar tu Perfil Fiscal cuando quieras.", "success");
+}
+
 async function seedDemo() {
   const date = new Date();
   const month = date.toISOString().slice(0, 7);
   const d = (day, offset = 0) => `${addMonths(month, offset)}-${String(day).padStart(2, "0")}`;
   const created = nowIso();
   const profile = { id: "regime_demo", effectiveFrom: `${date.getFullYear()}-01-01`, personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, createdAt: created };
-  settings = { id: "current", businessName: "Mi negocio", businessType: "both", currency: "MXN", personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, regimeHistory: [profile], themeId: "purple", accent: THEMES[0].accent, accent2: THEMES[0].accent2, accentSoft: THEMES[0].soft, accentSofter: THEMES[0].softer, accentInk: THEMES[0].ink, backgroundId: "beige", createdAt: created, updatedAt: created };
+  settings = { id: "current", businessName: "Creaciones Luna", businessType: "both", currency: "MXN", personType: "individual", regimeId: "resico_pf", manualIsrReservePercent: 10, regimeHistory: [profile], themeId: "purple", accent: THEMES[0].accent, accent2: THEMES[0].accent2, accentSoft: THEMES[0].soft, accentSofter: THEMES[0].softer, accentInk: THEMES[0].ink, createdAt: created, updatedAt: created };
   const products = [
-    { id: "cat_demo_1", kind: "product", name: "Producto principal", category: "Productos", price: 180, cost: 72, createdAt: created, updatedAt: created },
-    { id: "cat_demo_2", kind: "product", name: "Producto especial", category: "Productos", price: 280, cost: 125, createdAt: created, updatedAt: created },
-    { id: "cat_demo_3", kind: "service", name: "Servicio personalizado", category: "Servicios", price: 350, cost: 40, createdAt: created, updatedAt: created },
+    { id: "cat_demo_1", kind: "product", name: "Taza personalizada", category: "Sublimación", price: 180, cost: 72, createdAt: created, updatedAt: created },
+    { id: "cat_demo_2", kind: "product", name: "Playera estampada", category: "Textil", price: 280, cost: 125, createdAt: created, updatedAt: created },
+    { id: "cat_demo_3", kind: "service", name: "Diseño personalizado", category: "Diseño", price: 350, cost: 40, createdAt: created, updatedAt: created },
   ];
   const sales = [
-    ["mov_demo_1", d(3), "Producto principal", "Cliente 1", 360, 360, 144, "cat_demo_1"],
-    ["mov_demo_2", d(7), "Producto especial", "Cliente 2", 560, 300, 250, "cat_demo_2"],
-    ["mov_demo_3", d(11), "Servicio personalizado", "Cliente 3", 350, 350, 40, "cat_demo_3"],
+    ["mov_demo_1", d(3), "Taza personalizada", "Ana", 360, 360, 144, "cat_demo_1"],
+    ["mov_demo_2", d(7), "Playera estampada", "Laura", 560, 300, 250, "cat_demo_2"],
+    ["mov_demo_3", d(11), "Diseño personalizado", "Café Nube", 350, 350, 40, "cat_demo_3"],
   ].map(([id, dateValue, concept, party, amount, paidAmount, costAmount, catalogId]) => { const taxParts = calculateTaxParts(amount, true, 16); return { id, type: "income", date: dateValue, concept, category: "Producto", party, amount, paidAmount, costAmount, paymentMethod: "Transferencia", catalogId, catalogName: concept, notes: "", payments: paidAmount ? [{ id: `${id}_pay`, date: dateValue, amount: paidAmount, method: "Transferencia", createdAt: created }] : [], taxProfile: profile, tax: { includesVat: true, vatRate: 16, ...taxParts, invoiceStatus: "none", withheldIsr: 0, withheldVat: 0 }, createdAt: created, updatedAt: created }; });
   const expenses = [
-    ["mov_demo_4", d(5), "Materiales o insumos", "Proveedor", 480, "Materiales"],
-    ["mov_demo_5", d(9), "Publicidad del negocio", "Proveedor de publicidad", 300, "Publicidad"],
+    ["mov_demo_4", d(5), "Material para pedidos", "Proveedor local", 480, "Materiales"],
+    ["mov_demo_5", d(9), "Publicidad de la semana", "Meta", 300, "Publicidad"],
   ].map(([id, dateValue, concept, party, amount, category]) => { const taxParts = calculateTaxParts(amount, true, 16); return { id, type: "expense", date: dateValue, concept, category, party, amount, paidAmount: amount, costAmount: 0, paymentMethod: "Tarjeta", payments: [], taxProfile: profile, tax: { includesVat: true, vatRate: 16, ...taxParts, invoiceStatus: "pending", deductible: true, vatCreditable: true }, createdAt: created, updatedAt: created }; });
   const history = [];
   for (let offset = -5; offset < 0; offset += 1) {
@@ -903,9 +962,7 @@ async function handleClick(event) {
   }
   const action = target.dataset.action;
   if (action === "close-modal") closeModal();
-  else if (action === "back-platform") location.assign(globalThis.MYVIP_FINANCE_PLATFORM_URL || "../index.html");
   else if (action === "theme") openThemeModal();
-  else if (action === "background") openBackgroundModal();
   else if (action === "backup" || action === "download-backup") openBackupModal();
   else if (action === "restore") chooseRestoreFile();
   else if (action === "start-setup") renderSetup(1);
@@ -917,13 +974,9 @@ async function handleClick(event) {
     renderSetup(2, draft);
   } else if (action === "setup-back") renderSetup(1, JSON.parse(root.dataset.setupDraft || "{}"));
   else if (action === "finish-setup") await finishSetup();
+  else if (action === "finish-setup-basic") await finishSetupBasic();
   else if (action === "new-income") openMovementModal("income");
-  else if (action === "new-service") openMovementModal("income", "", "", "Servicio");
   else if (action === "new-expense") openMovementModal("expense");
-  else if (action === "show-registration-example") openRegistrationExample();
-  else if (action === "example-income") { closeModal(); openMovementModal("income"); }
-  else if (action === "example-service") { closeModal(); openMovementModal("income", "", "", "Servicio"); }
-  else if (action === "example-expense") { closeModal(); openMovementModal("expense"); }
   else if (action === "edit-movement") openMovementModal("income", target.dataset.id);
   else if (action === "new-catalog") openCatalogModal();
   else if (action === "edit-catalog") openCatalogModal(target.dataset.id);
@@ -933,40 +986,27 @@ async function handleClick(event) {
   else if (action === "add-payment") openPaymentModal(target.dataset.id);
   else if (action === "save-payment") await savePaymentFromForm();
   else if (action === "change-regime") openRegimeModal();
+  else if (action === "new-goal") openGoalModal();
+  else if (action === "edit-goal") openGoalModal(target.dataset.id);
+  else if (action === "save-goal") await saveGoalFromForm();
+  else if (action === "goal-to-route") await sendGoalToRoute(target.dataset.id);
+  else if (action === "delete-goal") { if (confirm("¿Eliminar esta meta? Tus movimientos financieros no se modificarán.")) { await store.remove("meta", target.dataset.id); await loadData(); render(); toast("Meta eliminada"); } }
   else if (action === "save-regime") await saveRegimeFromForm();
   else if (action === "create-backup") await createBackupFromForm();
   else if (action === "open-backup") await decryptRestore();
   else if (action === "restore-replace") await restoreData("replace");
   else if (action === "restore-merge") await restoreData("merge");
-  else if (action === "close-month") {
-    if (confirm(`¿Cerrar ${monthName(state.month)}? Podrás reabrirlo después si necesitas corregir algo.`)) await setMonthClosure("closed");
-  }
-  else if (action === "reopen-month") await setMonthClosure("open");
   else if (action === "clear-filters") { state.movementType = "all"; state.movementStatus = "all"; state.movementSearch = ""; render(); }
   else if (action === "apply-theme") {
     const theme = THEMES.find((item) => item.id === target.dataset.theme);
     if (theme) { await saveSettings({ themeId: theme.id, accent: theme.accent, accent2: theme.accent2, accentSoft: theme.soft, accentSofter: theme.softer, accentInk: theme.ink }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color actualizado", "success"); }
   } else if (action === "save-custom-theme") {
     const accent = document.getElementById("customAccent")?.value;
-    if (accent) { await saveSettings({ themeId: "custom", accent, accent2: `color-mix(in srgb, ${accent} 58%, white)`, accentSoft: `color-mix(in srgb, ${accent} 13%, #fffaf4)`, accentSofter: `color-mix(in srgb, ${accent} 5%, #fffaf4)`, accentInk: `color-mix(in srgb, ${accent} 58%, #241a2d)` }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color guardado", "success"); }
-  } else if (action === "apply-background") {
-    const background = BACKGROUNDS.find((item) => item.id === target.dataset.background);
-    if (background) { await saveSettings({ backgroundId: background.id, backgroundColor: background.base, backgroundWarm: background.warm, backgroundHeader: background.header, backgroundHeader2: background.header2, backgroundPanel: background.panel, backgroundPanel2: background.panel2, backgroundLine: background.line }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Fondo actualizado", "success"); }
-  } else if (action === "save-custom-background") {
-    const backgroundColor = document.getElementById("customBackground")?.value;
-    if (backgroundColor) { await saveSettings({ backgroundId: "custom", backgroundColor, backgroundWarm: `color-mix(in srgb, ${backgroundColor} 35%, white)`, backgroundHeader: `color-mix(in srgb, ${backgroundColor} 72%, white)`, backgroundHeader2: `color-mix(in srgb, ${backgroundColor} 42%, white)`, backgroundPanel: `color-mix(in srgb, ${backgroundColor} 62%, white)`, backgroundPanel2: `color-mix(in srgb, ${backgroundColor} 28%, white)`, backgroundLine: `color-mix(in srgb, ${backgroundColor} 75%, #aaa)` }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Fondo guardado", "success"); }
+    if (accent) { await saveSettings({ themeId: "custom", accent, accent2: accent, accentSoft: `color-mix(in srgb, ${accent} 12%, white)`, accentSofter: `color-mix(in srgb, ${accent} 4%, white)`, accentInk: accent }); closeModal(); root.innerHTML = shellHtml(); render(); toast("Color personalizado guardado", "success"); }
   } else if (action === "delete-movement") {
-    if (confirm("¿Eliminar este movimiento? Esta acción solo afecta tus datos en este dispositivo.")) { await store.remove("movements", target.dataset.id); await loadData(); closeModal(); render(); toast("Movimiento eliminado"); }
+    if (confirm("¿Eliminar este movimiento? Esta acción elimina el movimiento de tu identidad financiera y se sincronizará en tus dispositivos cuando haya conexión.")) { await store.remove("movements", target.dataset.id); await loadData(); closeModal(); render(); toast("Movimiento eliminado"); }
   } else if (action === "delete-catalog") {
     if (confirm("¿Eliminar este producto o servicio del catálogo? Las ventas anteriores se conservarán.")) { await store.remove("catalog", target.dataset.id); await loadData(); closeModal(); render(); toast("Elemento eliminado"); }
-  } else if (action === "export-month-pdf") {
-    const { from, to } = monthBounds();
-    target.disabled = true; target.textContent = "Generando…";
-    try { await exportPdf(buildReport({ movements, catalog, settings, from, to })); toast("PDF mensual descargado", "success"); } catch { toast("No pudimos generar el PDF", "error"); }
-    target.disabled = false; target.textContent = "Descargar PDF";
-  } else if (action === "export-month-word") {
-    const { from, to } = monthBounds();
-    exportWord(buildReport({ movements, catalog, settings, from, to })); toast("Reporte mensual Word descargado", "success");
   } else if (action === "export-pdf") {
     target.disabled = true; target.textContent = "Generando…";
     try { await exportPdf(buildReport({ movements, catalog, settings, from: state.reportFrom, to: state.reportTo })); toast("PDF descargado", "success"); } catch { toast("No pudimos generar el PDF", "error"); }
@@ -1025,14 +1065,15 @@ async function boot() {
       renderWelcome();
       return;
     }
+    const syncedFromMyBusiness = await syncFromMyBusiness();
     await loadData();
     applyTheme(settings);
     root.className = "";
     root.innerHTML = shellHtml();
     render();
+    if (syncedFromMyBusiness) toast(`${syncedFromMyBusiness} cambio${syncedFromMyBusiness === 1 ? "" : "s"} de Mi Negocio sincronizado${syncedFromMyBusiness === 1 ? "" : "s"}.`, "success");
   } catch (error) {
-    const missing = error.message === "MISSING_USER_ID";
-    root.innerHTML = `<div class="finance-loading"><div class="loading-card"><span class="loading-mark">!</span><h1>${missing ? "Inicia sesión para abrir Finanzas" : "No pudimos abrir Finanzas"}</h1><p>${missing ? "Por seguridad, abre esta sección desde tu cuenta dentro de la Plataforma VIP." : "Actualiza la página o revisa que tu navegador permita guardar datos en este dispositivo."}</p>${missing ? '<a class="button primary finance-return" href="../index.html">Volver a la Plataforma VIP</a>' : ""}</div></div>`;
+    root.innerHTML = `<div class="finance-loading"><div class="loading-card"><span class="loading-mark">!</span><h1>No pudimos abrir Finanzas</h1><p>${error.message === "MISSING_USER_ID" ? "La Plataforma VIP debe identificar primero la cuenta que inició sesión." : "Actualiza la página o revisa que tu navegador permita guardar datos en este dispositivo."}</p></div></div>`;
   }
 }
 
@@ -1047,6 +1088,7 @@ globalThis.MYVIPFinanceClient = {
     settings = undefined;
     movements = [];
     catalog = [];
+    goals = [];
     state.tab = "summary";
     root.className = "finance-loading";
     root.innerHTML = '<div class="loading-card"><span class="loading-mark">MY</span><h1>Abriendo tus finanzas</h1><p>Estamos cargando el espacio privado de esta cuenta.</p><div class="loader"></div></div>';
@@ -1058,6 +1100,7 @@ globalThis.MYVIPFinanceClient = {
     settings = undefined;
     movements = [];
     catalog = [];
+    goals = [];
     closeModal();
     root.className = "finance-loading";
     root.innerHTML = '<div class="loading-card"><span class="loading-mark">MY</span><h1>Finanzas protegidas</h1><p>Inicia sesión nuevamente para abrir este espacio.</p></div>';

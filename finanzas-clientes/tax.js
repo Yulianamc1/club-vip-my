@@ -1,3 +1,5 @@
+export const TAX_RULES_AS_OF = "2026-09-03";
+export const RESICO_REFERENCE_LIMITS = { individual: 3500000, corporate: 35000000 };
 export const TAX_REGIMES = {
   individual: [
     {
@@ -105,10 +107,11 @@ export const TAX_REGIMES = {
 };
 
 export const SAT_REFERENCE_URLS = {
-  regimes: "https://www.cloudb.sat.gob.mx/datos_fiscales/regimen",
-  resicoPf: "https://www.sat.gob.mx/portal/public/personas-fisicas/pf-simplificado-de-confianza",
-  businessPf: "https://www.sat.gob.mx/portal/public/personas-fisicas/pf-actividades-empresariales-y-profesionales",
-  platforms: "https://wwwmatnp.sat.gob.mx/declaracion/87655/presenta-tu-declaracion-de-pagos-",
+  regimes: "https://wwwmatnp.sat.gob.mx/articulo/58780/articulo-113-e",
+  resicoPf: "https://wwwmatnp.sat.gob.mx/articulo/58780/articulo-113-e",
+  resicoAnnualPf: "https://wwwmat.sat.gob.mx/articulo/58872/articulo-113-f",
+  resicoWithholdingPf: "https://wwwmat.sat.gob.mx/articulo/59511/articulo-113-j",
+  resicoCorporate: "https://wwwmatnp.sat.gob.mx/articulo/17370/regla-3.13.31",
   declarations: "https://www.sat.gob.mx/portal/public/tramites/declaraciones-pf",
 };
 
